@@ -26,6 +26,7 @@ module RSpec
       add_setting :profile_examples
       add_setting :run_all_when_everything_filtered
       add_setting :mock_framework, :default => :rspec
+      add_setting :expectation_framework, :default => :rspec
       add_setting :filter
       add_setting :exclusion_filter
       add_setting :filename_pattern, :default => '**/*_spec.rb'
@@ -115,6 +116,19 @@ module RSpec
           'rspec/core/mocking/with_flexmock'
         else
           'rspec/core/mocking/with_absolutely_nothing'
+        end
+      end
+
+      def expect_with(expectation_framework)
+        settings[:expectation_framework] = expectation_framework
+      end
+
+      def require_expectation_framework_adapter
+        require case expectation_framework.to_s
+        when /rspec/i
+          'rspec/core/expecting/with_rspec'
+        else
+          raise ArgumentError, "#{expectation_framework.inspect} is not supported"
         end
       end
 
@@ -296,6 +310,11 @@ EOM
       def configure_mock_framework
         require_mock_framework_adapter
         RSpec::Core::ExampleGroup.send(:include, RSpec::Core::MockFrameworkAdapter)
+      end
+
+      def configure_expectation_framework
+        require_expectation_framework_adapter
+        RSpec::Core::ExampleGroup.send(:include, RSpec::Core::ExpectationFrameworkAdapter)
       end
 
       def load_spec_files

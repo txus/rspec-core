@@ -63,8 +63,4 @@ module RSpec
 end
 
 require 'rspec/core/backward_compatibility'
-
-# TODO - make this configurable with default 'on'
-require 'rspec/expectations'
-
 require 'rspec/monkey'
