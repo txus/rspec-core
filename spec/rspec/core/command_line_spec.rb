@@ -47,13 +47,31 @@ module RSpec::Core
 
       before do
         config.stub(:run_hook)
+      end
 
+      it "loads spec files" do
         config.should_receive(:load_spec_files)
-        config.should_receive(:configure_mock_framework)
-        config.should_receive(:configure_expectation_framework)
+        command_line.run(out, out)
+      end
 
+      it "configures the mock framework" do
+        config.should_receive(:configure_mock_framework)
+        command_line.run(out, out)
+      end
+
+      it "configures the expectations framework" do
+        config.should_receive(:configure_expectation_framework)
+        command_line.run(out, out)
+      end
+
+      it "announces the inclusion filter" do
         world.should_receive(:announce_inclusion_filter)
+        command_line.run(out, out)
+      end
+
+      it "announces the exclusion filter" do
         world.should_receive(:announce_exclusion_filter)
+        command_line.run(out, out)
       end
 
       it "runs before suite hooks" do
