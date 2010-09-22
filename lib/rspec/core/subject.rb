@@ -65,6 +65,7 @@ module RSpec
       end
 
       module ClassMethods
+        require 'ostruct' unless defined?(OpenStruct)
         # Creates a nested example group named by the submitted +attribute+,
         # and then generates an example using the submitted block.
         #
@@ -94,12 +95,27 @@ module RSpec
         #
         #     its("phone_numbers.first") { should == "555-1212" }
         #   end
+        #
+        # When the subject is a +Hash+, the given +Symbol+ or +String+ refers
+        # to one of its keys.
+        #
+        #   describe "a configuration Hash" do
+        #     subject do
+        #       { :max_users => 3,
+        #         'admin' => :all_permissions }
+        #     end
+        #
+        #     its(:max_users) { should == 3 }
+        #     its('admin') { should == :all_permissions }
+        #   end
+        #
         def its(attribute, &block)
           describe(attribute) do
             example do
               self.class.class_eval do
                 define_method(:subject) do
                   attribute.to_s.split('.').inject(super()) do |target, method|
+                    target = OpenStruct.new(target) if target.is_a?(Hash)
                     target.send(method)
                   end
                 end
