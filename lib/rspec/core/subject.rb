@@ -96,8 +96,8 @@ module RSpec
         #     its("phone_numbers.first") { should == "555-1212" }
         #   end
         #
-        # When the subject is a +Hash+, the given +Symbol+ or +String+ refers
-        # to one of its keys.
+        # When the subject is a +Hash+, you can refer to the Hash keys by
+        # specifying a +Symbol+ or +String+ in an array.
         #
         #   describe "a configuration Hash" do
         #     subject do
@@ -105,8 +105,12 @@ module RSpec
         #         'admin' => :all_permissions }
         #     end
         #
-        #     its(:max_users) { should == 3 }
-        #     its('admin') { should == :all_permissions }
+        #     its([:max_users]) { should == 3 }
+        #     its(['admin']) { should == :all_permissions }
+        #
+        #     # You can still access to its regular methods this way:
+        #     its(:keys) { should include(:max_users) }
+        #     its(:count) { should == 2 }
         #   end
         #
         def its(attribute, &block)
@@ -115,7 +119,7 @@ module RSpec
               self.class.class_eval do
                 define_method(:subject) do
                   attribute.to_s.split('.').inject(super()) do |target, method|
-                    target = OpenStruct.new(target) if target.is_a?(Hash)
+                    target = OpenStruct.new(target) if target.is_a?(Hash) && attribute.is_a?(Array)
                     target.send(method)
                   end
                 end

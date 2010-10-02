@@ -555,7 +555,14 @@ module RSpec::Core
             'another_attribute' => 'another_value' }
         end
         its([:attribute]) { should == 'value' }
-        its(['another_attribute']) { should == 'another_value' }
+        its([:another_attribute]) { should == 'another_value' }
+        its(:keys) { should == ['another_attribute', :attribute] }
+
+        context "when referring to an attribute without the proper array syntax" do
+          it "raises a NoMethodError" do
+            expect{ its(:attribute) }.to raise_error(NoMethodError)
+          end
+        end
       end
       
       context "calling and overriding super" do
