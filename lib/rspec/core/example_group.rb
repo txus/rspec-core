@@ -20,6 +20,7 @@ module RSpec
       end
 
       def self.inherited(klass)
+        RSpec::Core::Runner.autorun
         world.example_groups << klass if klass.top_level?
       end
 
@@ -93,7 +94,7 @@ module RSpec
       end
 
       def self.descendant_filtered_examples
-        @descendant_filtered_examples ||= filtered_examples + children.collect{|c| c.descendant_filtered_examples}
+        @descendant_filtered_examples ||= filtered_examples + children.collect{|c| c.descendant_filtered_examples}.flatten
       end
 
       def self.metadata
@@ -226,13 +227,23 @@ module RSpec
 
       def self.fail_filtered_examples(exception, reporter)
         filtered_examples.each { |example| example.fail_fast(reporter, exception) }
+
+        children.each do |child|
+          reporter.example_group_started(child)
+          child.fail_filtered_examples(exception, reporter)
+          reporter.example_group_finished(child)
+        end
       end
 
       def self.run_examples(instance, reporter)
         filtered_examples.map do |example|
           begin
             set_ivars(instance, before_all_ivars)
-            example.run(instance, reporter)
+            succeeded = example.run(instance, reporter)
+            if Rspec.configuration.fail_fast? && !succeeded
+              Rspec.wants_to_quit = true 
+            end
+            succeeded
           ensure
             clear_ivars(instance)
             clear_memoized(instance)

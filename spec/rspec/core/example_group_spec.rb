@@ -260,6 +260,37 @@ module RSpec::Core
         order.should == [3,2,1]
       end
 
+      it "only runs before/after(:all) hooks from example groups that have specs that run" do
+        hooks_run = []
+
+        RSpec.configure do |c|
+          c.filter_run :focus => true
+        end
+
+        unfiltered_group = ExampleGroup.describe "unfiltered" do
+          before(:all) { hooks_run << :unfiltered_before_all }
+          after(:all)  { hooks_run << :unfiltered_after_all  }
+
+          context "a subcontext" do
+            it("has an example") { }
+          end
+        end
+
+        filtered_group = ExampleGroup.describe "filtered", :focus => true do
+          before(:all) { hooks_run << :filtered_before_all }
+          after(:all)  { hooks_run << :filtered_after_all  }
+
+          context "a subcontext" do
+            it("has an example") { }
+          end
+        end
+
+        unfiltered_group.run_all
+        filtered_group.run_all
+
+        hooks_run.should == [:filtered_before_all, :filtered_after_all]
+      end
+
       it "runs before_all_defined_in_config, before all, before each, example, after each, after all, after_all_defined_in_config in that order" do
         order = []
 
@@ -328,6 +359,23 @@ module RSpec::Core
         group = ExampleGroup.describe
         group.before(:all) { raise "error in before all" }
         example = group.example("equality") { 1.should == 2}
+        group.run_all
+
+        example.metadata.should_not be_nil
+        example.metadata[:execution_result].should_not be_nil
+        example.metadata[:execution_result][:exception_encountered].should_not be_nil
+        example.metadata[:execution_result][:exception_encountered].message.should == "error in before all"
+      end
+
+      it "treats an error in before(:all) as a failure for a spec in a nested group" do
+        example = nil
+        group = ExampleGroup.describe do
+          before(:all) { raise "error in before all" }
+
+          describe "nested" do
+            example = it("equality") { 1.should == 2}
+          end
+        end
         group.run_all
 
         example.metadata.should_not be_nil
