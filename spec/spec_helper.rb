@@ -23,12 +23,6 @@ class NullObject
   end
 end
 
-class RSpec::Core::ExampleGroup
-  def self.run_all(reporter=nil)
-    run(reporter || NullObject.new)
-  end
-end
-
 def sandboxed(&block)
   begin
     @orig_config = RSpec.configuration
@@ -42,8 +36,25 @@ def sandboxed(&block)
     object.extend(RSpec::Core::ObjectExtensions)
     object.extend(RSpec::Core::SharedExampleGroup)
 
+    (class << RSpec::Core::ExampleGroup; self; end).class_eval do
+      alias_method :orig_run, :run
+      def run(reporter=nil)
+        @orig_mock_space = RSpec::Mocks::space
+        RSpec::Mocks::space = RSpec::Mocks::Space.new
+        orig_run(reporter || NullObject.new)
+      ensure
+        RSpec::Mocks::space = @orig_mock_space
+      end
+    end
+
     object.instance_eval(&block)
   ensure
+    (class << RSpec::Core::ExampleGroup; self; end).class_eval do
+      remove_method :run
+      alias_method :run, :orig_run
+      remove_method :orig_run
+    end
+
     RSpec.instance_variable_set(:@configuration, @orig_config)
     RSpec.instance_variable_set(:@world, @orig_world)
   end
@@ -54,7 +65,6 @@ def in_editor?
 end
 
 RSpec.configure do |c|
-  c.fail_fast = true
   c.color_enabled = !in_editor?
   c.filter_run :focused => true
   c.run_all_when_everything_filtered = true

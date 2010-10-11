@@ -10,7 +10,10 @@ class Autotest::Rspec2 < Autotest
     super
     clear_mappings
     setup_rspec_project_mappings
-    self.failed_results_re = /^\s*\d\)\s(.*?$\n.*?$).*?#\s(.*?):/m
+
+    # Example for Ruby 1.8: http://rubular.com/r/AOXNVDrZpx
+    # Example for Ruby 1.9: http://rubular.com/r/85ag5AZ2jP
+    self.failed_results_re = /^\s*\d+\).*\n\s+Failure.*(\n\s+#\s(.*)?:\d+(?::.*)?)+$/m
     self.completed_re = /\n(?:\e\[\d*m)?\d* examples?/m
   end
 
@@ -38,11 +41,15 @@ class Autotest::Rspec2 < Autotest
 
   def make_test_cmd(files_to_test)
     files_to_test.empty? ? '' :
-      "#{ruby} #{require_rubygems}#{SPEC_PROGRAM} #{normalize(files_to_test).keys.flatten.map { |f| "'#{f}'"}.join(' ')}"
+      "#{bundle_exec}#{ruby} #{require_rubygems}-S #{SPEC_PROGRAM} --autotest #{normalize(files_to_test).keys.flatten.map { |f| "'#{f}'"}.join(' ')}"
+  end
+
+  def bundle_exec
+    using_bundler? ? "bundle exec " : ""
   end
 
   def require_rubygems
-    using_bundler? ? "" : defined?(:Gem) ? "-rrubygems " : ""
+    using_bundler? ? "" : defined?(:Gem) ? "-rrubygems " : " "
   end
 
   def normalize(files_to_test)
@@ -50,10 +57,6 @@ class Autotest::Rspec2 < Autotest
       result[File.expand_path(filename)] = []
       result
     end
-  end
-
-  def ruby
-    using_bundler? ? "bundle exec" : super
   end
 
   def using_bundler?

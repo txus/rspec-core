@@ -88,17 +88,24 @@ module RSpec::Core
         it "renders them after rcov" do
           task.rcov = true
           task.rcov_opts = '--exclude "mocks"'
-          spec_command.should =~ /^-S rcov --exclude "mocks"/
+          spec_command.should =~ /rcov.*--exclude "mocks"/
+        end
+
+        it "ensures that -Ispec is in the resulting command" do
+          task.rcov = true
+          task.rcov_opts = '--exclude "mocks"'
+          spec_command.should =~ /rcov.*-Ispec/
         end
       end
     end
 
     context "with rspec_opts" do
       context "with rcov=true" do
-        it "does not add the rspec_opts" do
+        it "adds the rspec_opts after the rcov_opts and files" do
+          task.stub(:files_to_run) { "this.rb that.rb" }
           task.rcov = true
           task.rspec_opts = "-Ifoo"
-          spec_command.should_not =~ /-Ifoo/
+          spec_command.should =~ /this.rb that.rb -- -Ifoo/
         end
       end
       context "with rcov=false (default)" do
@@ -123,5 +130,19 @@ module RSpec::Core
       end
     end
 
+    context "with SPEC=path/to/file" do
+      before do
+        @orig_spec = ENV["SPEC"]
+        ENV["SPEC"] = "path/to/file"
+      end
+
+      after do
+        ENV["SPEC"] = @orig_spec
+      end
+
+      it "sets files to run" do
+        task.__send__(:files_to_run).should eq(["path/to/file"])
+      end
+    end
   end
 end

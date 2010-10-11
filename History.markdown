@@ -1,13 +1,33 @@
 ## rspec-core release history (incomplete)
 
-### 2.0.0.beta.23 / not yet released
+### 2.0.1 / in development
 
-[full changelog](http://github.com/rspec/rspec-core/compare/v2.0.0.beta.22...master)
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.0.0...master)
+
+* Bug fixes
+  * restore color when using spork + autotest
+
+### 2.0.0 / 2010-10-10
+
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.0.0.rc...v2.0.0)
+
+* RSpec-1 compatibility
+  * Rake task uses ENV["SPEC"] as file list if present
+
+* Bug fixes
+  * Bug Fix: optparse --out foo.txt (Leonardo Bessa)
+  * Suppress color codes for non-tty output (except autotest)
+
+### 2.0.0.rc / 2010-10-05
+
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.0.0.beta.22...v2.0.0.rc)
 
 * Enhancements
   * implicitly require unknown formatters so you don't have to require the
     file explicitly on the commmand line (Michael Grosser) 
   * add --out/-o option to assign output target
+  * added fail_fast configuration option to abort on first failure
+  * support a Hash subject (its([:key]) { should == value }) (Josep M. Bach)
 
 * Bug fixes
   * Explicitly require rspec version to fix broken rdoc task (Hans de Graaff)

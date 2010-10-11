@@ -1,12 +1,33 @@
 # Upgrade to rspec-core-2.0
 
-## What's changed since rspec-1
+## What's changed since RSpec-1
 
 ### rspec command
 
 The command to run specs is now `rspec` instead of `spec`.
 
     rspec ./spec
+
+#### Co-habitation of rspec-1 and rspec-2
+
+Early beta versions of RSpec-2 included a `spec` command, which conflicted with
+the RSpec-1 `spec` command because RSpec-1's was installed by the rspec gem,
+while RSpec-2's is installed by the rspec-core gem.
+
+If you installed one of these early versions, the safest bet is to uninstall
+rspec-1 and rspec-core-2, and then reinstall both. After you do this, you will
+be able to run rspec-2 like this:
+
+    `rspec ./spec`
+
+... and rspec-1 like this:
+
+    `spec _1.3.1_ ./spec`
+
+Rubygems inspects the first argument to any gem executable to see if it's
+formatted like a version number surrounded by underscores. If so, it uses that
+version (e.g.  `1.3.1`). If not, it uses the most recent version (e.g.
+`2.0.0`).
 
 ### rake task
 
@@ -43,7 +64,7 @@ Or, if you're using bundler:
 
 The `autospec` command is a thing of the past. 
 
-### RSpec
+### RSpec is the new Spec
 
 The root namespace (top level module) is now `RSpec` instead of `Spec`, and
 the root directory under `lib` within all of the `rspec` gems is `rspec` instead of `spec`.
@@ -65,6 +86,37 @@ options. Precedence is:
     command line
     ./.rspec
     ~/.rspec
+
+### Bones
+
+Bones produces a handy little Rakefile to provide several services including
+running specs. The current version (3.4.7) still assumes RSpec-1. To bring its
+Rakefile into conformance with RSpec-2 a few changes are necessary.
+
+1.  The require line has changed to `require 'spec/rake/spectask'`
+
+2.  The `spec_opts` accessor has been deprecated in favor of `rspec_opts`. Also,
+    the `rspec` command no longer supports the `--options` command line option
+    so the options must be embedded directly in the Rakefile, or stored in the
+    `.rspec` files mentioned above.
+
+3.  The `spec_files` accessor has been replaced by `pattern`.
+
+Here is a complete example:
+
+    # rspec-1
+    Spec::Rake::SpecTask.new do |t|
+      t.spec_opts = ['--options', "\"spec/spec.opts\""]
+      t.spec_files = FileList['spec/**/*.rb']
+    end
+
+becomes:
+
+    # rspec-2
+    RSpec::Core::RakeTask.new do |t|
+      t.rspec_opts = ["-c", "-f progress", "-r ./spec/spec_helper.rb"]
+      t.pattern = 'spec/**/*_spec.rb'
+    end
 
 ### `context` is no longer a top-level method
 

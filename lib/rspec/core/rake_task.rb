@@ -73,6 +73,12 @@ module RSpec
       #   nil
       attr_accessor :ruby_opts
 
+      # Path to rspec
+      #
+      # default:
+      #   'rspec'
+      attr_accessor :rspec_path
+
       # Command line options to pass to rspec.
       #
       # default:
@@ -93,8 +99,9 @@ module RSpec
 
         yield self if block_given?
 
-        @rcov_path ||= 'rcov'
-        @pattern ||= './spec/**/*_spec.rb'
+        @rcov_path  ||= 'rcov'
+        @rspec_path ||= 'rspec'
+        @pattern    ||= './spec/**/*_spec.rb'
 
         desc("Run RSpec code examples") unless ::Rake.application.last_comment
 
@@ -117,7 +124,11 @@ module RSpec
     private
 
       def files_to_run # :nodoc:
-        FileList[ pattern ].map { |f| %["#{f}"] }
+        if ENV['SPEC']
+          FileList[ ENV['SPEC'] ]
+        else
+          FileList[ pattern ].map { |f| %["#{f}"] }
+        end
       end
 
       def spec_command
@@ -127,8 +138,15 @@ module RSpec
                             cmd_parts << "-S"
                             cmd_parts << "bundle exec" if bundler?
                             cmd_parts << runner
-                            cmd_parts << runner_options 
+                            if rcov
+                              cmd_parts << ["-Ispec", rcov_opts]
+                            else
+                              cmd_parts << rspec_opts
+                            end
                             cmd_parts << files_to_run
+                            if rcov && rspec_opts
+                              cmd_parts << ["--",  rspec_opts]
+                            end
                             cmd_parts.flatten.compact.reject(&blank).join(" ")
                           end
       end
@@ -136,11 +154,7 @@ module RSpec
     private
 
       def runner
-        rcov ? rcov_path : 'rspec'
-      end
-
-      def runner_options
-        rcov ? [rcov_opts] : [rspec_opts]
+        rcov ? rcov_path : rspec_path
       end
 
       def bundler?

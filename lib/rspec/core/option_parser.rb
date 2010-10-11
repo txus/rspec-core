@@ -52,7 +52,7 @@ module RSpec::Core
         end
 
         parser.on('-o', '--out FILE', 'output to a file instead of STDOUT') do |o|
-          options[:output_stream] = o
+          options[:output_stream] = File.open(o,'w')
         end
 
         parser.on_tail('-h', '--help', "You're looking at it.") do
@@ -94,6 +94,10 @@ module RSpec::Core
 
         parser.on('--drb-port [PORT]', 'Port to connect to on the DRb server') do |o|
           options[:drb_port] = o.to_i
+        end
+
+        parser.on('--autotest') do |o|
+          options[:autotest] = true
         end
       end
     end

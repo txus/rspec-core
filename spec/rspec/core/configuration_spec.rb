@@ -204,9 +204,41 @@ module RSpec::Core
 
     describe "#color_enabled=" do
       context "given true" do
+        context "with non-tty output and no autotest" do
+          it "does not set color_enabled" do
+            config.output_stream = StringIO.new
+            config.output_stream.stub(:tty?) { false }
+            config.autotest = false
+            config.color_enabled = true
+            config.color_enabled.should be_false
+          end
+        end
+
+        context "with tty output" do
+          it "does not set color_enabled" do
+            config.output_stream = StringIO.new
+            config.output_stream.stub(:tty?) { true }
+            config.autotest = false
+            config.color_enabled = true
+            config.color_enabled.should be_true
+          end
+        end
+
+        context "with autotest output" do
+          it "does not set color_enabled" do
+            config.output_stream = StringIO.new
+            config.output_stream.stub(:tty?) { false }
+            config.autotest = true
+            config.color_enabled = true
+            config.color_enabled.should be_true
+          end
+        end
+
         context "on windows" do
           before do
             @original_host  = RbConfig::CONFIG['host_os']
+            @original_stdout = $stdout
+            @original_stderr = $stderr
             RbConfig::CONFIG['host_os'] = 'mswin'
             config.stub(:require)
             config.stub(:warn)
@@ -214,6 +246,8 @@ module RSpec::Core
 
           after do
             RbConfig::CONFIG['host_os'] = @original_host
+            $stdout = @original_stdout
+            $stderr = @original_stderr
           end
 
           context "with win32console available" do
@@ -223,14 +257,48 @@ module RSpec::Core
               config.color_enabled = true
             end
 
-            it "leaves output stream intact" do
-              config.output_stream = $stdout
-              config.stub(:require) do |what|
-                config.output_stream = 'foo' if what =~ /Win32/
+            context "with $stdout/err assigned to config.output/error_stream" do
+              it "reassigns new $stdout to output_stream" do
+                config.output_stream = $stdout
+                substitute_stdout = StringIO.new
+                config.stub(:require) do |what|
+                  $stdout = substitute_stdout if what =~ /Win32/
+                end
+                config.color_enabled = true
+                config.output_stream.should eq(substitute_stdout)
               end
-              config.color_enabled = true
-              config.output_stream.should eq($stdout)
+
+              it "reassigns new $stderr to error_stream" do
+                config.error_stream = $stderr
+                substitute_stderr = StringIO.new
+                config.stub(:require) do |what|
+                  $stderr = substitute_stderr if what =~ /Win32/
+                end
+                config.color_enabled = true
+                config.error_stream.should eq(substitute_stderr)
+              end
             end
+
+            context "without $stdout/err assigned to config.output/error_stream" do
+              it "leaves output stream intact" do
+                config.output_stream = output_stream = StringIO.new
+                config.stub(:require) do |what|
+                  $stdout = StringIO.new if what =~ /Win32/
+                end
+                config.color_enabled = true
+                config.output_stream.should eq(output_stream)
+              end
+
+              it "leaves error stream intact" do
+                config.error_stream = error_stream = StringIO.new
+                config.stub(:require) do |what|
+                  $stderr = StringIO.new if what =~ /Win32/
+                end
+                config.color_enabled = true
+                config.error_stream.should eq(error_stream)
+              end
+            end
+
           end
 
           context "with win32console NOT available" do

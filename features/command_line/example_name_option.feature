@@ -17,20 +17,30 @@ Feature: example name option
         it "second example in first group" do; end
       end
       """
-    Given a file named "second_spec.rb" with:
+    And a file named "second_spec.rb" with:
       """
       describe "second group" do
         it "first example in second group" do; end
         it "second example in second group" do; end
       end
       """
-    Given a file named "third_spec.rb" with:
+    And a file named "third_spec.rb" with:
       """
       describe "third group" do
         it "first example in third group" do; end
         context "nested group" do
           it "first example in nested group" do; end
           it "second example in nested group" do; end
+        end
+      end
+      """
+    And a file named "fourth_spec.rb" with:
+      """
+      describe Array do
+        describe "#length" do
+          it "is the number of items" do
+            Array.new([1,2,3]).length.should eq 3
+          end
         end
       end
       """
@@ -70,3 +80,7 @@ Feature: example name option
   Scenario: all examples in one group including examples in nested groups
     When I run "rspec . --example 'third group'"
     Then the output should contain "3 examples, 0 failures"
+
+  Scenario: Object#method
+    When I run "rspec . --example 'Array#length'"
+    Then the output should contain "1 example, 0 failures"

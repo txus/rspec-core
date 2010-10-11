@@ -60,6 +60,7 @@ module RSpec
       alias_example_to :specify
       alias_example_to :focused, :focused => true
       alias_example_to :pending, :pending => true
+      alias_example_to :xit,     :pending => true
 
       def self.define_shared_group_method(new_name, report_label=nil)
         module_eval(<<-END_RUBY, __FILE__, __LINE__)
@@ -158,12 +159,14 @@ module RSpec
       end
 
       def self.store_before_all_ivars(example_group_instance)
+        return if example_group_instance.instance_variables.empty?
         example_group_instance.instance_variables.each { |ivar| 
           before_all_ivars[ivar] = example_group_instance.instance_variable_get(ivar)
         }
       end
 
       def self.assign_before_all_ivars(ivars, example_group_instance)
+        return if ivars.empty?
         ivars.each { |ivar, val| example_group_instance.instance_variable_set(ivar, val) }
       end
 
@@ -195,7 +198,20 @@ module RSpec
       def self.eval_after_alls(example_group_instance)
         return if descendant_filtered_examples.empty?
         assign_before_all_ivars(before_all_ivars, example_group_instance)
-        run_hook!(:after, :all, example_group_instance)
+
+        begin
+          run_hook!(:after, :all, example_group_instance)
+        rescue => e
+          # TODO: come up with a better solution for this.
+          RSpec.configuration.reporter.message <<-EOS
+
+An error occurred in an after(:all) hook.
+  #{e.class}: #{e.message}
+  occurred at #{e.backtrace.first}
+
+        EOS
+        end
+
         world.run_hook_filtered(:after, :all, self, example_group_instance) if top_level?
       end
 
@@ -208,7 +224,6 @@ module RSpec
           RSpec.clear_remaining_example_groups if top_level?
           return
         end
-        @reporter = reporter
         example_group_instance = new
         reporter.example_group_started(self)
 
@@ -235,14 +250,17 @@ module RSpec
         end
       end
 
+      def self.fail_fast?
+        RSpec.configuration.fail_fast?
+      end
+
       def self.run_examples(instance, reporter)
         filtered_examples.map do |example|
+          next if RSpec.wants_to_quit
           begin
             set_ivars(instance, before_all_ivars)
             succeeded = example.run(instance, reporter)
-            if Rspec.configuration.fail_fast? && !succeeded
-              Rspec.wants_to_quit = true 
-            end
+            RSpec.wants_to_quit = true if fail_fast? && !succeeded
             succeeded
           ensure
             clear_ivars(instance)
@@ -285,6 +303,7 @@ module RSpec
         begin
           instance_eval(&hook)
         rescue Exception => e
+          raise unless example
           example.set_exception(e)
         end
       end
