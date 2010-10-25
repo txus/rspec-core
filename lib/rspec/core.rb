@@ -1,6 +1,7 @@
 require 'rspec/core/extensions'
 require 'rspec/core/load_path'
 require 'rspec/core/deprecation'
+require 'rspec/core/backward_compatibility'
 require 'rspec/core/reporter'
 
 require 'rspec/core/hooks'
@@ -30,21 +31,6 @@ module RSpec
       @install_directory ||= File.expand_path(File.dirname(__FILE__))
     end
 
-    def self.configuration
-      RSpec.deprecate('RSpec::Core.configuration', 'RSpec.configuration', '2.0.0')
-      RSpec.configuration
-    end
-
-    def self.configure
-      RSpec.deprecate('RSpec::Core.configure', 'RSpec.configure', '2.0.0')
-      yield RSpec.configuration if block_given?
-    end
-
-    def self.world
-      RSpec.deprecate('RSpec::Core.world', 'RSpec.world', '2.0.0')
-      RSpec.world
-    end
-
   end
 
   def self.wants_to_quit
@@ -71,8 +57,6 @@ module RSpec
     world.example_groups.clear
   end
 end
-
-require 'rspec/core/backward_compatibility'
 
 # TODO - make this configurable with default 'on'
 require 'rspec/expectations'
