@@ -13,6 +13,16 @@ module RSpec::Core
       Parser.parse!(%w[--formatter doc])
     end
 
+    it "deprecates the --configure autotest" do
+      RSpec.should_receive(:deprecate)
+      RSpec::Core::CommandLineInit::Autotest.stub(:generate)
+
+      parser = Parser.new
+      parser.stub(:exit)
+
+      parser.parse!(%w[--configure autotest])
+    end
+
     it "converts --formatter to --format" do
       options = Parser.parse!(%w[--formatter doc])
       options.should eq( {:formatter=>"doc"} )

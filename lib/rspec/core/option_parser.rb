@@ -14,6 +14,10 @@ module RSpec::Core
         RSpec.deprecate("the --formatter option", "-f or --format")
         args[args.index("--formatter")] = "--format"
       end
+      if args.include?("--configure")
+        RSpec.deprecate("the --configure option", "--init")
+        args[args.index("--configure")] = "--init"
+      end
       options = {}
       parser(options).parse!(args)
       options
@@ -89,6 +93,11 @@ module RSpec::Core
 
         parser.on('--configure COMMAND', 'Generate configuration files') do |cmd|
           CommandLineConfiguration.new(cmd).run
+          exit
+        end
+
+        parser.on('--init [COMMAND]', 'Generate configuration files') do |cmd|
+          CommandLineInit.new(cmd).run
           exit
         end
 

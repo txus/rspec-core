@@ -1,4 +1,4 @@
-Feature: configure
+Feature: configure (deprecated in favor of init)
 
   Use the --configure option on the command line to generate configuration
   files.
