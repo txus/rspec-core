@@ -4,8 +4,16 @@ Behaviour Driven Development for Ruby
 
 ## Documentation
 
-* [Cucumber features](http://relishapp.com/rspec/rspec-core/v/2-0)
-* [RDoc](http://rubydoc.info/gems/rspec-core/2.0.1/frames)
+The [Cucumber features](http://relishapp.com/rspec/rspec-core) are the
+most comprehensive and up-to-date docs for end-users.
+
+The [RDoc](http://rubydoc.info/gems/rspec-core/2.3.0/frames) provides
+additional information for contributors and/or extenders.
+
+All of the documentation is open source and a work in progress. If you find it
+lacking or confusing, you can help improve it by submitting requests and
+patches to the [rspec-core issue
+tracker](https://github.com/rspec/rspec-core/issues).
 
 ## Install
 
@@ -14,7 +22,7 @@ Behaviour Driven Development for Ruby
 
 ## Upgrading from rspec-1.x
 
-See [Upgrade.markdown](http://github.com/rspec/rspec-core/blob/master/Upgrade.markdown)
+See [features/Upgrade.md](http://github.com/rspec/rspec-core/blob/master/features/Upgrade.md)
 
 
 This will install the rspec, rspec-core, rspec-expectations and rspec-mocks
@@ -54,7 +62,7 @@ Be sure to require the implementation file in the spec:
     require "calculator"
 
 Now run the spec again, and watch it pass:
-    
+
     $ rspec spec/calculator_spec.rb
     .
 

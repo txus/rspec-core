@@ -1,13 +1,47 @@
 Feature: around hooks
 
-  As a developer using RSpec
-  I want to run the examples as part of a block given to a an arbitary function
-  So that I can control the environment in which it is run
+  Around hooks receive the example as a block argument, extended to behave like
+  a proc.  This lets you define code that should be executed before and after
+  the example. Of course, you can do the same thing with before and after hooks,
+  and it's often cleaner to do so.
 
-  Scenario: around hooks defined in a group are run
-    Given a file named "ensure_around_blocks_are_run.rb" with:
+  Where around hooks shine is when you want to run an example in a block. For
+  example, if your database library offers a transaction method that receives
+  a block, you can use an around hook as described in the first scenario:
+
+  Scenario: use the example as a proc within the block passed to around()
+    Given a file named "example_spec.rb" with:
       """
+      class Database
+        def self.transaction
+          puts "open transaction"
+          yield
+          puts "close transaction"
+        end
+      end
+
       describe "around filter" do
+        around(:each) do |example|
+          Database.transaction(&example)
+        end
+
+        it "gets run in order" do
+          puts "run the example"
+        end
+      end
+      """
+    When I run "rspec example_spec.rb"
+    Then the output should contain:
+      """
+      open transaction
+      run the example
+      close transaction
+      """
+
+  Scenario: invoke the example using run()
+    Given a file named "example_spec.rb" with:
+      """
+      describe "around hook" do
         around(:each) do |example|
           puts "around each before"
           example.run
@@ -19,7 +53,7 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./ensure_around_blocks_are_run.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain:
       """
       around each before
@@ -27,35 +61,24 @@ Feature: around hooks
       around each after
       """
 
-  Scenario: argument passed to around hook can be treated as a proc
-    Given a file named "treat_around_hook_arg_as_a_proc.rb" with:
+  Scenario: access the example metadata
+    Given a file named "example_spec.rb" with:
       """
-      describe "around filter" do
-        def perform_around
-          puts "around each before"
-          yield
-          puts "around each after"
-        end
-
+      describe "something" do
         around(:each) do |example|
-          perform_around(&example)
+          puts example.metadata[:foo]
+          example.run
         end
 
-        it "gets run in order" do
-          puts "in the example"
+        it "does something", :foo => "this should show up in the output" do
         end
       end
       """
-    When I run "rspec ./treat_around_hook_arg_as_a_proc.rb"
-    Then the output should contain:
-      """
-      around each before
-      in the example
-      around each after
-      """
+    When I run "rspec example_spec.rb"
+    Then the output should contain "this should show up in the output"
 
-  Scenario: around hooks defined globally are run
-    Given a file named "ensure_around_blocks_are_run.rb" with:
+  Scenario: define a global around hook
+    Given a file named "example_spec.rb" with:
       """
       RSpec.configure do |c|
         c.around(:each) do |example|
@@ -71,7 +94,7 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./ensure_around_blocks_are_run.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain:
       """
       around each before
@@ -80,7 +103,7 @@ Feature: around hooks
       """
 
   Scenario: before/after(:each) hooks are wrapped by the around hook
-    Given a file named "ensure_around_blocks_are_run.rb" with:
+    Given a file named "example_spec.rb" with:
       """
       describe "around filter" do
         around(:each) do |example|
@@ -102,7 +125,7 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./ensure_around_blocks_are_run.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain:
       """
       around each before
@@ -113,7 +136,7 @@ Feature: around hooks
       """
 
   Scenario: before/after(:all) hooks are NOT wrapped by the around hook
-    Given a file named "ensure_around_blocks_are_run.rb" with:
+    Given a file named "example_spec.rb" with:
       """
       describe "around filter" do
         around(:each) do |example|
@@ -135,7 +158,7 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./ensure_around_blocks_are_run.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain:
       """
       before all
@@ -145,8 +168,8 @@ Feature: around hooks
       .after all
       """
 
-  Scenario: examples run by an around block should run in the configured context
-    Given a file named "around_block_with_context.rb" with:
+  Scenario: examples run by an around block are run in the configured context
+    Given a file named "example_spec.rb" with:
       """
       module IncludedInConfigureBlock
         def included_in_configure_block; true; end
@@ -166,11 +189,11 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./around_block_with_context.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain "1 example, 0 failure"
 
-  Scenario: implicitly pending examples should be detected as Not Yet Implemented
-    Given a file named "around_block_with_implicit_pending_example.rb" with:
+  Scenario: implicitly pending examples are detected as Not Yet Implemented
+    Given a file named "example_spec.rb" with:
       """
       describe "implicit pending example" do
         around(:each) do |example|
@@ -180,7 +203,7 @@ Feature: around hooks
         it "should be detected as Not Yet Implemented"
       end
       """
-    When I run "rspec ./around_block_with_implicit_pending_example.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain "1 example, 0 failures, 1 pending"
     And the output should contain:
       """
@@ -190,8 +213,8 @@ Feature: around hooks
       """
 
 
-  Scenario: explicitly pending examples should be detected as pending
-    Given a file named "around_block_with_explicit_pending_example.rb" with:
+  Scenario: explicitly pending examples are detected as pending
+    Given a file named "example_spec.rb" with:
       """
       describe "explicit pending example" do
         around(:each) do |example|
@@ -203,7 +226,7 @@ Feature: around hooks
         end
       end
       """
-    When I run "rspec ./around_block_with_explicit_pending_example.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain "1 example, 0 failures, 1 pending"
     And the output should contain:
       """
@@ -211,41 +234,41 @@ Feature: around hooks
           # No reason given
       """
 
-  Scenario: multiple around hooks in the same scope are all run
-    Given a file named "around_hooks_in_same_scope.rb" with:
-    """
-    describe "if there are multiple around hooks in the same scope" do
-      around(:each) do |example|
-        puts "first around hook before"
-        example.run
-        puts "first around hook after"
-      end
+  Scenario: multiple around hooks in the same scope
+    Given a file named "example_spec.rb" with:
+      """
+      describe "if there are multiple around hooks in the same scope" do
+        around(:each) do |example|
+          puts "first around hook before"
+          example.run
+          puts "first around hook after"
+        end
 
-      around(:each) do |example|
-        puts "second around hook before"
-        example.run
-        puts "second around hook after"
-      end
+        around(:each) do |example|
+          puts "second around hook before"
+          example.run
+          puts "second around hook after"
+        end
 
-      it "they should all be run" do
-        puts "in the example"
-        1.should == 1
+        it "they should all be run" do
+          puts "in the example"
+          1.should == 1
+        end
       end
-    end
-    """
-    When I run "rspec ./around_hooks_in_same_scope.rb"
+      """
+    When I run "rspec example_spec.rb"
     Then the output should contain "1 example, 0 failure"
     And the output should contain:
-    """
-    first around hook before
-    second around hook before
-    in the example
-    second around hook after
-    first around hook after
-    """
+      """
+      first around hook before
+      second around hook before
+      in the example
+      second around hook after
+      first around hook after
+      """
 
-  Scenario: around hooks in outer scopes are run
-    Given a file named "around_hooks_in_outer_scope.rb" with:
+  Scenario: around hooks in multiple scopes
+    Given a file named "example_spec.rb" with:
     """
     describe "if there are around hooks in an outer scope" do
       around(:each) do |example|
@@ -293,7 +316,7 @@ Feature: around hooks
       end
     end
     """
-    When I run "rspec ./around_hooks_in_outer_scope.rb"
+    When I run "rspec example_spec.rb"
     Then the output should contain "1 example, 0 failure"
     And the output should contain:
     """

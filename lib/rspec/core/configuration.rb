@@ -13,7 +13,7 @@ module RSpec
         else
           define_method("#{name}=") {|val| settings[name] = val}
           define_method(name)       { settings.has_key?(name) ? settings[name] : opts[:default] }
-          define_method("#{name}?") { !!(send name) }
+          define_method("#{name}?") { send name }
         end
       end
 
@@ -24,16 +24,15 @@ module RSpec
       add_setting :drb
       add_setting :drb_port
       add_setting :profile_examples
-      add_setting :fail_fast, :default => false
+      add_setting :fail_fast
       add_setting :run_all_when_everything_filtered
-      add_setting :mock_framework, :default => :rspec
       add_setting :filter
       add_setting :exclusion_filter
       add_setting :filename_pattern, :default => '**/*_spec.rb'
       add_setting :files_to_run
       add_setting :include_or_extend_modules
       add_setting :backtrace_clean_patterns
-      add_setting :autotest
+      add_setting :tty
 
       def initialize
         @color_enabled = false
@@ -46,6 +45,11 @@ module RSpec
           /spec\/spec_helper\.rb/,
           /lib\/rspec\/(core|expectations|matchers|mocks)/
         ]
+
+        filter_run_excluding(
+          :if     => lambda { |value, metadata| metadata.has_key?(:if) && !value },
+          :unless => lambda { |value| value }
+        )
       end
 
       # :call-seq:
@@ -62,7 +66,7 @@ module RSpec
       #
       #   RSpec.configuration.foo=(value)
       #   RSpec.configuration.foo()
-      #   RSpec.configuration.foo?() # returns !!foo
+      #   RSpec.configuration.foo?() # returns true if foo returns anything but nil or false
       #
       # Intended for extension frameworks like rspec-rails, so they can add config
       # settings that are domain specific. For example:
@@ -106,22 +110,98 @@ module RSpec
         backtrace_clean_patterns.any? { |regex| line =~ regex }
       end
 
-      def mock_with(mock_framework)
-        settings[:mock_framework] = mock_framework
+      # Returns the configured mock framework adapter module
+      def mock_framework
+        settings[:mock_framework] ||= begin
+                                        require 'rspec/core/mocking/with_rspec'
+                                        RSpec::Core::MockFrameworkAdapter
+                                      end
       end
 
-      def require_mock_framework_adapter
-        require case mock_framework.to_s
-        when /rspec/i
-          'rspec/core/mocking/with_rspec'
-        when /mocha/i
-          'rspec/core/mocking/with_mocha'
-        when /rr/i
-          'rspec/core/mocking/with_rr'
-        when /flexmock/i
-          'rspec/core/mocking/with_flexmock'
+      # Delegates to mock_framework=(framework)
+      def mock_with(framework)
+        self.mock_framework = framework
+      end
+
+      # Sets the mock framework adapter module.
+      #
+      # +framework+ can be a Symbol or a Module.
+      #
+      # Given any of :rspec, :mocha, :flexmock, or :rr, configures the named
+      # framework.
+      #
+      # Given :nothing, configures no framework. Use this if you don't use any
+      # mocking framework to save a little bit of overhead.
+      #
+      # Given a Module, includes that module in every example group. The module
+      # should adhere to RSpec's mock framework adapter API:
+      #
+      #   setup_mocks_for_rspec
+      #     - called before each example
+      #
+      #   verify_mocks_for_rspec
+      #     - called after each example. Framework should raise an exception
+      #       when expectations fail
+      #
+      #   teardown_mocks_for_rspec
+      #     - called after verify_mocks_for_rspec (even if there are errors)
+      def mock_framework=(framework)
+        case framework
+        when Module
+          settings[:mock_framework] = framework
+        when String, Symbol
+          require case framework.to_s
+                  when /rspec/i
+                    'rspec/core/mocking/with_rspec'
+                  when /mocha/i
+                    'rspec/core/mocking/with_mocha'
+                  when /rr/i
+                    'rspec/core/mocking/with_rr'
+                  when /flexmock/i
+                    'rspec/core/mocking/with_flexmock'
+                  else
+                    'rspec/core/mocking/with_absolutely_nothing'
+                  end
+          settings[:mock_framework] = RSpec::Core::MockFrameworkAdapter
         else
-          'rspec/core/mocking/with_absolutely_nothing'
+        end
+      end
+
+      # Returns the configured expectation framework adapter module(s)
+      def expectation_frameworks
+        settings[:expectation_frameworks] ||= begin
+                                               require 'rspec/core/expecting/with_rspec'
+                                               [RSpec::Core::ExpectationFrameworkAdapter]
+                                             end
+      end
+
+      # Delegates to expect_with=([framework])
+      def expectation_framework=(framework)
+        expect_with([framework])
+      end
+
+      # Sets the expectation framework module(s).
+      #
+      # +frameworks+ can be :rspec, :stdlib, or both 
+      #
+      # Given :rspec, configures rspec/expectations.
+      # Given :stdlib, configures test/unit/assertions
+      # Given both, configures both
+      def expect_with(*frameworks)
+        settings[:expectation_frameworks] = []
+        frameworks.each do |framework|
+          case framework
+          when Symbol
+            case framework
+            when :rspec
+              require 'rspec/core/expecting/with_rspec'
+            when :stdlib
+              require 'rspec/core/expecting/with_stdlib'
+            else
+              raise ArgumentError, "#{framework.inspect} is not supported"
+            end
+            settings[:expectation_frameworks] << RSpec::Core::ExpectationFrameworkAdapter
+          end
         end
       end
 
@@ -130,25 +210,19 @@ module RSpec
       end
 
       def color_enabled
-        @color_enabled && (output_to_tty? || autotest?)
+        @color_enabled && output_to_tty?
       end
 
       def color_enabled?
-        !!color_enabled
+        color_enabled
       end
 
       def color_enabled=(bool)
         return unless bool
         @color_enabled = true
         if bool && ::RbConfig::CONFIG['host_os'] =~ /mswin|mingw/
-          using_stdout = settings[:output_stream] == $stdout
-          using_stderr = settings[:error_stream]  == $stderr
-          begin
-            require 'Win32/Console/ANSI'
-            settings[:output_stream] = $stdout if using_stdout
-            settings[:error_stream]  = $stderr if using_stderr
-          rescue LoadError
-            warn "You must 'gem install win32console' to use colour on Windows"
+          unless ENV['ANSICON']
+            warn "You must use ANSICON 1.31 or later (http://adoxa.110mb.com/ansicon/) to use colour on Windows"
             @color_enabled = false
           end
         end
@@ -166,6 +240,7 @@ module RSpec
         return unless bool
         begin
           require 'ruby-debug'
+          Debugger.start
         rescue LoadError
           raise <<-EOM
 
@@ -181,35 +256,33 @@ EOM
       end
 
       def line_number=(line_number)
-        filter_run :line_number => line_number.to_i
+        filter_run({ :line_number => line_number.to_i }, true)
       end
 
       def full_description=(description)
-        filter_run :full_description => /#{description}/
+        filter_run({ :full_description => /#{description}/ }, true)
       end
 
-      attr_writer :formatter_class
-
-      def formatter_class
-        @formatter_class ||= begin
-                               require 'rspec/core/formatters/progress_formatter'
-                               RSpec::Core::Formatters::ProgressFormatter
-                             end
-      end
-
-      def formatter=(formatter_to_use)
-        self.formatter_class = 
+      def add_formatter(formatter_to_use, output=nil)
+        formatter_class =
           built_in_formatter(formatter_to_use) ||
           custom_formatter(formatter_to_use) ||
           (raise ArgumentError, "Formatter '#{formatter_to_use}' unknown - maybe you meant 'documentation' or 'progress'?.")
+
+        formatters << formatter_class.new(output ? File.new(output, 'w') : self.output)
       end
 
-      def formatter
-        @formatter ||= formatter_class.new(output)
+      alias_method :formatter=, :add_formatter
+
+      def formatters
+        @formatters ||= []
       end
 
       def reporter
-        @reporter ||= Reporter.new(formatter)
+        @reporter ||= begin
+                        add_formatter('progress') if formatters.empty?
+                        Reporter.new(*formatters)
+                      end
       end
 
       def files_or_directories_to_run=(*files)
@@ -260,19 +333,23 @@ EOM
         RSpec::Core::ExampleGroup.alias_it_should_behave_like_to(new_name, report_label)
       end
 
-      def filter_run_including(options={})
+      def filter_run_including(options={}, force_overwrite = false)
         if filter and filter[:line_number] || filter[:full_description]
           warn "Filtering by #{options.inspect} is not possible since " \
                "you are already filtering by #{filter.inspect}"
         else
-          self.filter = options
+          if force_overwrite
+            self.filter = options
+          else
+            self.filter = (filter || {}).merge(options)
+          end
         end
       end
 
       alias_method :filter_run, :filter_run_including
 
       def filter_run_excluding(options={})
-        self.exclusion_filter = options
+        self.exclusion_filter = (exclusion_filter || {}).merge(options)
       end
 
       def include(mod, filters={})
@@ -285,32 +362,52 @@ EOM
 
       def configure_group(group)
         modules = {
-          :include => [] + group.included_modules,
-          :extend  => [] + group.ancestors
+          :include => group.included_modules.dup,
+          :extend  => group.ancestors.dup
         }
 
         include_or_extend_modules.each do |include_or_extend, mod, filters|
-          next unless group.all_apply?(filters)
-          next if modules[include_or_extend].include?(mod)
-          modules[include_or_extend] << mod
+          next unless filters.empty? || group.apply?(:any?, filters)
           group.send(include_or_extend, mod)
         end
       end
 
       def configure_mock_framework
-        require_mock_framework_adapter
-        RSpec::Core::ExampleGroup.send(:include, RSpec::Core::MockFrameworkAdapter)
+        RSpec::Core::ExampleGroup.send(:include, mock_framework)
+      end
+
+      def configure_expectation_framework
+        expectation_frameworks.each do |framework|
+          RSpec::Core::ExampleGroup.send(:include, framework)
+        end
       end
 
       def load_spec_files
         files_to_run.map {|f| load File.expand_path(f) }
+        raise_if_rspec_1_is_loaded
       end
 
     private
 
+      def raise_if_rspec_1_is_loaded
+        if defined?(Spec) && defined?(Spec::VERSION::MAJOR) && Spec::VERSION::MAJOR == 1
+          raise <<-MESSAGE
+
+#{'*'*80}
+  You are running rspec-2, but it seems as though rspec-1 has been loaded as
+  well.  This is likely due to a statement like this somewhere in the specs:
+
+      require 'spec'
+
+  Please locate that statement, remove it, and try again.
+#{'*'*80}
+MESSAGE
+        end
+      end
+
       def output_to_tty?
         begin
-          settings[:output_stream].tty?
+          output_stream.tty? || tty?
         rescue NoMethodError
           false
         end
@@ -355,7 +452,7 @@ EOM
       end
 
       def underscore_with_fix_for_non_standard_rspec_naming(string)
-        underscore(string).sub(%r{(^|/)r_spec($|/)}, '\\1rspec\\2') 
+        underscore(string).sub(%r{(^|/)r_spec($|/)}, '\\1rspec\\2')
       end
 
       # activesupport/lib/active_support/inflector/methods.rb, line 48

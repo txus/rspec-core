@@ -70,16 +70,22 @@ module RSpec::Core
       end
 
       it "is not registered in world" do
+        world = RSpec::Core::World.new
         parent = ExampleGroup.describe
+        world.register(parent)
         child = parent.describe
-        RSpec.world.example_groups.should == [parent]
+        world.example_groups.should == [parent]
       end
     end
 
     describe "filtering" do
+      let(:world) { World.new }
+
       it "includes all examples in an explicitly included group" do
-        RSpec.world.stub(:inclusion_filter).and_return({ :awesome => true })
+        world.stub(:inclusion_filter).and_return({ :awesome => true })
         group = ExampleGroup.describe("does something", :awesome => true)
+        group.stub(:world) { world }
+
         examples = [
           group.example("first"),
           group.example("second")
@@ -88,16 +94,19 @@ module RSpec::Core
       end
 
       it "includes explicitly included examples" do
-        RSpec.world.stub(:inclusion_filter).and_return({ :include_me => true })
+        world.stub(:inclusion_filter).and_return({ :include_me => true })
         group = ExampleGroup.describe
+        group.stub(:world) { world }
         example = group.example("does something", :include_me => true)
         group.example("don't run me")
         group.filtered_examples.should == [example]
       end
 
       it "excludes all examples in an excluded group" do
-        RSpec.world.stub(:exclusion_filter).and_return({ :include_me => false })
+        world.stub(:exclusion_filter).and_return({ :include_me => false })
         group = ExampleGroup.describe("does something", :include_me => false)
+        group.stub(:world) { world }
+
         examples = [
           group.example("first"),
           group.example("second")
@@ -106,8 +115,10 @@ module RSpec::Core
       end
 
       it "filters out excluded examples" do
-        RSpec.world.stub(:exclusion_filter).and_return({ :exclude_me => true })
+        world.stub(:exclusion_filter).and_return({ :exclude_me => true })
         group = ExampleGroup.describe("does something")
+        group.stub(:world) { world }
+
         examples = [
           group.example("first", :exclude_me => true),
           group.example("second")
@@ -118,6 +129,7 @@ module RSpec::Core
       context "with no filters" do
         it "returns all" do
           group = ExampleGroup.describe
+          group.stub(:world) { world }
           example = group.example("does something")
           group.filtered_examples.should == [example]
         end
@@ -125,8 +137,9 @@ module RSpec::Core
 
       context "with no examples or groups that match filters" do
         it "returns none" do
-          RSpec.world.stub(:inclusion_filter).and_return({ :awesome => false })
+          world.stub(:inclusion_filter).and_return({ :awesome => false })
           group = ExampleGroup.describe
+          group.stub(:world) { world }
           example = group.example("does something")
           group.filtered_examples.should == []
         end
@@ -163,6 +176,21 @@ module RSpec::Core
         end
       end
 
+      context "in a nested group" do
+        it "inherits the described class/module from the outer group" do
+          group = ExampleGroup.describe(String) do
+            describe Array do
+              example "desribes is String" do
+                described_class.should eq(String)
+              end
+            end
+          end
+
+          group.run.should be_true, "expected examples in group to pass"
+        end
+      end
+
+
     end
 
     describe '#described_class' do
@@ -198,6 +226,21 @@ module RSpec::Core
         ExampleGroup.describe(Object) { }.metadata[:example_group][:line_number].should == __LINE__
       end
 
+    end
+
+    [:focus, :focused].each do |example_alias|
+      describe "##{example_alias}" do
+        let(:group) { ExampleGroup.describe }
+        subject { group.send example_alias, "a focused example" }
+
+        it 'defines an example that can be filtered with :focused => true' do
+          subject.metadata.should include(:focused => true)
+        end
+
+        it 'defines an example that can be filtered with :focus => true' do
+          subject.metadata.should include(:focus => true)
+        end
+      end
     end
 
     describe "#before, after, and around hooks" do
@@ -346,7 +389,7 @@ module RSpec::Core
         example = group.example("equality") { 1.should == 2}
         group.run
 
-        example.metadata[:execution_result][:exception_encountered].message.should == "error in before each"
+        example.metadata[:execution_result][:exception].message.should == "error in before each"
       end
 
       it "treats an error in before(:all) as a failure" do
@@ -357,8 +400,8 @@ module RSpec::Core
 
         example.metadata.should_not be_nil
         example.metadata[:execution_result].should_not be_nil
-        example.metadata[:execution_result][:exception_encountered].should_not be_nil
-        example.metadata[:execution_result][:exception_encountered].message.should == "error in before all"
+        example.metadata[:execution_result][:exception].should_not be_nil
+        example.metadata[:execution_result][:exception].message.should == "error in before all"
       end
 
       it "treats an error in before(:all) as a failure for a spec in a nested group" do
@@ -374,8 +417,8 @@ module RSpec::Core
 
         example.metadata.should_not be_nil
         example.metadata[:execution_result].should_not be_nil
-        example.metadata[:execution_result][:exception_encountered].should_not be_nil
-        example.metadata[:execution_result][:exception_encountered].message.should == "error in before all"
+        example.metadata[:execution_result][:exception].should_not be_nil
+        example.metadata[:execution_result][:exception].message.should == "error in before all"
       end
 
       context "when an error occurs in an after(:all) hook" do
@@ -479,8 +522,8 @@ module RSpec::Core
     describe Object, "describing nested example_groups", :little_less_nested => 'yep' do
 
       describe "A sample nested group", :nested_describe => "yep" do
-        it "sets the described class to the constant Object" do
-          example.example_group.describes.should == Object
+        it "sets the described class to the described class of the outer most group" do
+          example.example_group.describes.should eq(ExampleGroup)
         end
 
         it "sets the description to 'A sample nested describe'" do
@@ -626,10 +669,13 @@ module RSpec::Core
         its([:another_attribute]) { should == 'another_value' }
         its([:another_attribute]) { should_not == 'value' }
         its(:keys) { should =~ ['another_attribute', :attribute] }
-
         context "when referring to an attribute without the proper array syntax" do
-          it "raises a NoMethodError" do
-            expect{ its(:attribute) }.to raise_error(NoMethodError)
+          context "it raises an error" do
+            its(:attribute) do
+              expect do
+                should eq('value')
+              end.to raise_error(NoMethodError)
+            end
           end
         end
       end
@@ -687,20 +733,20 @@ module RSpec::Core
       end
 
       context "with RSpec.wants_to_quit=true" do
+        let(:group) { RSpec::Core::ExampleGroup.describe }
+
         before do
-          RSpec.world.stub(:example_groups) { [] }
-          RSpec.world.stub(:wants_to_quit) { true }
+          RSpec.stub(:wants_to_quit) { true }
+          RSpec.stub(:clear_remaining_example_groups)
         end
 
         it "returns without starting the group" do
-          group = RSpec::Core::ExampleGroup.describe
           reporter.should_not_receive(:example_group_started)
           group.run(reporter)
         end
 
         context "at top level" do
           it "purges remaining groups" do
-            group = RSpec::Core::ExampleGroup.describe
             RSpec.should_receive(:clear_remaining_example_groups)
             group.run(reporter)
           end
@@ -708,7 +754,6 @@ module RSpec::Core
 
         context "in a nested group" do
           it "does not purge remaining groups" do
-            group = RSpec::Core::ExampleGroup.describe
             nested_group = group.describe
             RSpec.should_not_receive(:clear_remaining_example_groups)
             nested_group.run(reporter)

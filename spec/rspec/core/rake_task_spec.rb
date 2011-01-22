@@ -10,7 +10,8 @@ module RSpec::Core
     end
 
     def with_bundler
-      task.bundler = true
+      task.skip_bundler = false
+      File.stub(:exist?) { true }
       yield
     end
 
@@ -30,9 +31,28 @@ module RSpec::Core
     end
 
     context "with bundler" do
-      it "renders bundle exec rspec" do
-        with_bundler do
-          spec_command.should =~ /^-S bundle exec rspec/
+      context "with Gemfile" do
+        it "renders bundle exec rspec" do
+          File.stub(:exist?) { true }
+          task.skip_bundler = false
+          spec_command.should match(/bundle exec/)
+        end
+      end
+
+      context "with non-standard Gemfile" do
+        it "renders bundle exec rspec" do
+          File.stub(:exist?) {|f| f =~ /AltGemfile/}
+          task.gemfile = 'AltGemfile'
+          task.skip_bundler = false
+          spec_command.should match(/bundle exec/)
+        end
+      end
+
+      context "without Gemfile" do
+        it "renders bundle exec rspec" do
+          File.stub(:exist?) { false }
+          task.skip_bundler = false
+          spec_command.should_not match(/bundle exec/)
         end
       end
     end
@@ -77,10 +97,10 @@ module RSpec::Core
           spec_command.should =~ /rcov.*--exclude "mocks"/
         end
 
-        it "ensures that -Ispec is in the resulting command" do
+        it "ensures that -Ispec:lib is in the resulting command" do
           task.rcov = true
           task.rcov_opts = '--exclude "mocks"'
-          spec_command.should =~ /rcov.*-Ispec/
+          spec_command.should =~ /rcov.*-Ispec:lib/
         end
       end
     end
@@ -114,6 +134,27 @@ module RSpec::Core
 
       it "sets files to run" do
         task.__send__(:files_to_run).should eq(["path/to/file"])
+      end
+    end
+
+    context "with paths with quotes" do
+      before do
+        @tmp_dir = File.expand_path('./tmp/rake_task_example/')
+        FileUtils.mkdir_p @tmp_dir
+        @task = RakeTask.new do |t|
+          t.pattern = File.join(@tmp_dir, "*spec.rb")
+        end
+        ["first_spec.rb", "second_\"spec.rb", "third_\'spec.rb"].each do |file_name|
+          FileUtils.touch(File.join(@tmp_dir, file_name))
+        end
+      end
+
+      it "escapes the quotes" do
+        @task.__send__(:files_to_run).sort.should eq([
+          File.join(@tmp_dir, "first_spec.rb"),
+          File.join(@tmp_dir, "second_\\\"spec.rb"),
+          File.join(@tmp_dir, "third_\\\'spec.rb") 
+        ])
       end
     end
   end

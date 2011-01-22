@@ -3,21 +3,8 @@ require 'autotest/rspec2'
 
 Dir['./spec/support/**/*.rb'].map {|f| require f}
 
-module RSpec
-  module Core
-    module Matchers
-      def fail
-        raise_error(::RSpec::Expectations::ExpectationNotMetError)
-      end
-
-      def fail_with(message)
-        raise_error(::RSpec::Expectations::ExpectationNotMetError, message)
-      end
-    end
-  end
-end
-
 class NullObject
+  private
   def method_missing(method, *args, &block)
     # ignore
   end
@@ -66,7 +53,7 @@ end
 
 RSpec.configure do |c|
   c.color_enabled = !in_editor?
-  c.filter_run :focused => true
+  c.filter_run :focus => true
   c.run_all_when_everything_filtered = true
   c.filter_run_excluding :ruby => lambda {|version|
     case version.to_s

@@ -15,7 +15,7 @@ module RSpec
           super(example_group)
 
           output.puts if @group_level == 0
-          output.puts "#{'  ' * @group_level}#{example_group.description}"
+          output.puts "#{current_indentation}#{example_group.description}"
 
           @group_level += 1
         end
@@ -36,7 +36,7 @@ module RSpec
 
         def example_failed(example)
           super(example)
-          output.puts failure_output(example, example.execution_result[:exception_encountered])
+          output.puts failure_output(example, example.execution_result[:exception])
         end
 
         def failure_output(example, exception)

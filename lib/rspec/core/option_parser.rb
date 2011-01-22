@@ -23,7 +23,7 @@ module RSpec::Core
 
     def parser(options)
       OptionParser.new do |parser|
-        parser.banner = "Usage: rspec [options] [files or directories]"
+        parser.banner = "Usage: rspec [options] [files or directories]\n\n"
 
         parser.on('-b', '--backtrace', 'Enable full backtrace') do |o|
           options[:full_backtrace] = true
@@ -48,11 +48,17 @@ module RSpec::Core
                 '  [h]tml',
                 '  [t]extmate',
                 '  custom formatter class name') do |o|
-          options[:formatter] = o
+          options[:formatters] ||= []
+          options[:formatters] << [o]
         end
 
-        parser.on('-o', '--out FILE', 'output to a file instead of STDOUT') do |o|
-          options[:output_stream] = File.open(o,'w')
+        parser.on('-o', '--out FILE',
+                  'Write output to a file instead of STDOUT. This option applies',
+                  'to the previously specified --format, or the default format if',
+                  'no format is specified.'
+                 ) do |o|
+          options[:formatters] ||= [['progress']]
+          options[:formatters].last << o
         end
 
         parser.on_tail('-h', '--help', "You're looking at it.") do
@@ -67,6 +73,10 @@ module RSpec::Core
 
         parser.on('-l', '--line_number LINE', 'Specify the line number of a single example to run') do |o|
           options[:line_number] = o
+        end
+
+        parser.on('-O', '--options PATH', 'Specify the path to an options file') do |path|
+          options[:custom_options_file] = path
         end
 
         parser.on('-p', '--profile', 'Enable profiling of examples with output of the top 10 slowest examples') do |o|
@@ -96,8 +106,25 @@ module RSpec::Core
           options[:drb_port] = o.to_i
         end
 
-        parser.on('--autotest') do |o|
-          options[:autotest] = true
+        parser.on('--fail-fast', 'Abort the run on first failure.') do |o|
+          options[:fail_fast] = true
+        end
+
+        parser.on('-t', '--tag TAG[:VALUE]', 'Run examples with the specified tag',
+                'To exclude examples, add ~ before the tag (e.g. ~slow)',
+                '(TAG is always converted to a symbol)') do |tag|
+          filter_type = tag =~ /^~/ ? :exclusion_filter : :filter
+
+          name,value = tag.gsub(/^(~@|~|@)/, '').split(':')
+          name = name.to_sym
+          value = true if value.nil?
+
+          options[filter_type] ||= {}
+          options[filter_type][name] = value
+        end
+
+        parser.on('--tty', 'Used internally by rspec when sending commands to other processes') do |o|
+          options[:tty] = true
         end
       end
     end

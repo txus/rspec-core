@@ -19,18 +19,8 @@ Gem::Specification.new do |s|
   s.files            = `git ls-files`.split("\n")
   s.test_files       = `git ls-files -- {spec,features}/*`.split("\n")
   s.executables      = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
-  s.extra_rdoc_files = [ "README.markdown" ]
+  s.extra_rdoc_files = [ "README.md" ]
   s.rdoc_options     = ["--charset=UTF-8"]
   s.require_path     = "lib"
-
-  s.post_install_message = %Q{**************************************************
-
-  Thank you for installing #{s.summary}
-
-  Please be sure to look at Upgrade.markdown to see what might have changed
-  since the last release.
-
-**************************************************
-}
 end
 

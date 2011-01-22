@@ -2,14 +2,46 @@ module RSpec
   module Core
     class Metadata < Hash
 
+      module LocationKeys
+        def [](key)
+          return super if has_key?(key)
+          case key
+          when :location
+            store(:location, location)
+          when :file_path, :line_number
+            file_path, line_number = file_and_line_number
+            store(:file_path, file_path)
+            store(:line_number, line_number)
+            self[key]
+          else
+            super
+          end
+        end
+
+        def location
+          "#{self[:file_path]}:#{self[:line_number]}"
+        end
+
+        def file_and_line_number
+          first_caller_from_outside_rspec =~ /(.+?):(\d+)(|:\d+)/
+          return [$1, $2.to_i]
+        end
+
+        def first_caller_from_outside_rspec
+          self[:caller].detect {|l| l !~ /\/lib\/rspec\/core/}
+        end
+      end
+
       def initialize(superclass_metadata=nil)
         @superclass_metadata = superclass_metadata
         if @superclass_metadata
           update(@superclass_metadata)
           example_group = {:example_group => @superclass_metadata[:example_group]}
+        else
+          example_group = {}
         end
 
-        store(:example_group, example_group || {})
+        store(:example_group, example_group.extend(LocationKeys))
         yield self if block_given?
       end
 
@@ -27,13 +59,11 @@ module RSpec
         user_metadata = args.last.is_a?(Hash) ? args.pop : {}
         ensure_valid_keys(user_metadata)
 
-        self[:example_group][:describes] = described_class_from(*args)
-        self[:example_group][:description] = description_from(*args)
-        self[:example_group][:full_description] = full_description_from(*args)
-
-        self[:example_group][:block] = user_metadata.delete(:example_group_block)
-        self[:example_group][:file_path], self[:example_group][:line_number] = file_and_line_number_from(user_metadata.delete(:caller) || caller)
-        self[:example_group][:location] = location_from(self[:example_group])
+        self[:example_group].store(:caller, user_metadata.delete(:caller) || caller)
+        self[:example_group].store(:describes, described_class_from(*args))
+        self[:example_group].store(:description, description_from(*args))
+        self[:example_group].store(:full_description, full_description_from(*args))
+        self[:example_group].store(:block, user_metadata.delete(:example_group_block))
 
         update(user_metadata)
       end
@@ -60,21 +90,20 @@ EOM
         end
       end
 
-      def for_example(description, options)
-        dup.configure_for_example(description,options)
+      def for_example(description, user_metadata)
+        dup.extend(LocationKeys).configure_for_example(description, user_metadata)
       end
 
-      def configure_for_example(description, options)
+      def configure_for_example(description, user_metadata)
         store(:description, description.to_s)
         store(:full_description, "#{self[:example_group][:full_description]} #{self[:description]}")
         store(:execution_result, {})
-        self[:file_path], self[:line_number] = file_and_line_number_from(options.delete(:caller) || caller)
-        self[:location] = location_from(self)
-        update(options)
+        store(:caller, user_metadata.delete(:caller) || caller)
+        update(user_metadata)
       end
 
-      def all_apply?(filters)
-        filters.all? do |key, value|
+      def apply?(predicate, filters)
+        filters.send(predicate) do |key, value|
           apply_condition(key, value)
         end
       end
@@ -88,15 +117,24 @@ EOM
         end
       end
 
-      def apply_condition(key, value, metadata=nil)
-        metadata ||= self
+      def apply_condition(key, value, metadata=self)
         case value
         when Hash
           value.all? { |k, v| apply_condition(k, v, metadata[key]) }
         when Regexp
           metadata[key] =~ value
         when Proc
-          value.call(metadata[key]) rescue false
+          if value.arity == 2
+            # Pass the metadata hash to allow the proc to check if it even has the key.
+            # This is necessary for the implicit :if exclusion filter:
+            #   {            } # => run the example
+            #   { :if => nil } # => exclude the example
+            # The value of metadata[:if] is the same in these two cases but
+            # they need to be treated differently.
+            value.call(metadata[key], metadata) rescue false
+          else
+            value.call(metadata[key]) rescue false
+          end
         when Fixnum
           if key == :line_number
             relevant_line_numbers(metadata).include?(world.preceding_declaration_line(value))
@@ -140,25 +178,9 @@ EOM
       end
 
       def described_class_from(*args)
-        if args.first.is_a?(String) || args.first.is_a?(Symbol)
-          superclass_metadata[:example_group][:describes]
-        else
-          args.first
+        superclass_metadata[:example_group][:describes] || begin
+          args.first unless args.first.is_a?(String) || args.first.is_a?(Symbol)
         end
-      end
-
-      def file_and_line_number_from(list)
-        entry = first_caller_from_outside_rspec_from_caller(list)
-        entry =~ /(.+?):(\d+)(|:\d+)/
-        return [$1, $2.to_i]
-      end
-
-      def first_caller_from_outside_rspec_from_caller(list)
-        list.detect {|l| l !~ /\/lib\/rspec\/core/}
-      end
-
-      def location_from(metadata)
-        "#{metadata[:file_path]}:#{metadata[:line_number]}"
       end
     end
   end

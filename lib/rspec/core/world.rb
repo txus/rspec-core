@@ -18,6 +18,11 @@ module RSpec
         }
       end
 
+      def register(example_group)
+        example_groups << example_group
+        example_group
+      end
+
       def inclusion_filter
         @configuration.filter
       end
@@ -39,13 +44,13 @@ module RSpec
       end
 
       def apply_inclusion_filters(examples, conditions={})
-        examples.select(&all_apply?(conditions))
+        examples.select(&apply?(:any?, conditions))
       end
 
       alias_method :find, :apply_inclusion_filters
 
       def apply_exclusion_filters(examples, conditions={})
-        examples.reject(&all_apply?(conditions))
+        examples.reject(&apply?(:any?, conditions))
       end
 
       def preceding_declaration_line(filter_line)
@@ -76,14 +81,14 @@ module RSpec
 
       include RSpec::Core::Hooks
 
-      def find_hook(hook, scope, group)
-        @configuration.find_hook(hook, scope, group)
+      def find_hook(hook, scope, group, example = nil)
+        @configuration.find_hook(hook, scope, group, example)
       end
 
     private
 
-      def all_apply?(conditions)
-        lambda {|example| example.metadata.all_apply?(conditions)}
+      def apply?(predicate, conditions)
+        lambda {|example| example.metadata.apply?(predicate, conditions)}
       end
 
       def declaration_line_numbers

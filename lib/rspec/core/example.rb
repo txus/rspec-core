@@ -2,7 +2,7 @@ module RSpec
   module Core
     class Example
 
-      attr_reader :metadata, :options
+      attr_reader :metadata, :options, :example_group_instance
 
       def self.delegate_to_metadata(*keys)
         keys.each do |key|
@@ -10,7 +10,7 @@ module RSpec
         end
       end
 
-      delegate_to_metadata :description, :full_description, :execution_result, :file_path, :pending
+      delegate_to_metadata :description, :full_description, :execution_result, :file_path, :pending, :location
 
       def initialize(example_group_class, desc, options, example_block=nil)
         @example_group_class, @options, @example_block = example_group_class, options, example_block
@@ -23,9 +23,16 @@ module RSpec
         @example_group_class
       end
 
-      def pending?
-        !!pending
+      def around_hooks
+        @around_hooks ||= example_group.around_hooks_for(self)
       end
+
+      def apply?(predicate, filters)
+        @metadata.apply?(predicate, filters) ||
+        @example_group_class.apply?(predicate, filters)
+      end
+
+      alias_method :pending?, :pending
 
       def run(example_group_instance, reporter)
         @example_group_instance = example_group_instance
@@ -68,17 +75,30 @@ module RSpec
         finish(reporter)
       end
 
+      class Procsy < Proc
+        attr_reader :metadata
+        alias_method :run, :call
+        def initialize(metadata, &block)
+          @metadata = metadata
+          super(&block)
+        end
+      end
+
     private
 
-      def with_pending_capture(&block)
+      def with_pending_capture
         @pending_declared_in_example = catch(:pending_declared_in_example) do
-          block.call
+          yield
           throw :pending_declared_in_example, false
         end
       end
 
-      def with_around_hooks(&wrapped_example)
-        @example_group_class.eval_around_eachs(@example_group_instance, wrapped_example).call
+      def with_around_hooks
+        if around_hooks.empty?
+          yield
+        else
+          @example_group_class.eval_around_eachs(self, Procsy.new(metadata)).call
+        end
       end
 
       def start(reporter)
@@ -88,7 +108,7 @@ module RSpec
 
       def finish(reporter)
         if @exception
-          record_finished 'failed', :exception_encountered => @exception
+          record_finished 'failed', :exception => @exception
           reporter.example_failed self
           false
         elsif @pending_declared_in_example
@@ -113,11 +133,11 @@ module RSpec
 
       def run_before_each
         @example_group_instance.setup_mocks_for_rspec if @example_group_instance.respond_to?(:setup_mocks_for_rspec)
-        @example_group_class.eval_before_eachs(@example_group_instance)
+        @example_group_class.eval_before_eachs(self)
       end
 
       def run_after_each
-        @example_group_class.eval_after_eachs(@example_group_instance)
+        @example_group_class.eval_after_eachs(self)
         @example_group_instance.verify_mocks_for_rspec if @example_group_instance.respond_to?(:verify_mocks_for_rspec)
       ensure
         @example_group_instance.teardown_mocks_for_rspec if @example_group_instance.respond_to?(:teardown_mocks_for_rspec)

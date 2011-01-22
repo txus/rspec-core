@@ -19,18 +19,21 @@ require 'rspec/core/command_line'
 require 'rspec/core/drb_command_line'
 require 'rspec/core/runner'
 require 'rspec/core/example'
+require 'rspec/core/shared_context'
 require 'rspec/core/shared_example_group'
 require 'rspec/core/example_group'
 require 'rspec/core/version'
 require 'rspec/core/errors'
 
 module RSpec
-  module Core
+  autoload :Matchers, 'rspec/matchers'
 
+  SharedContext = Core::SharedContext
+
+  module Core
     def self.install_directory
       @install_directory ||= File.expand_path(File.dirname(__FILE__))
     end
-
   end
 
   def self.wants_to_quit
@@ -58,7 +61,5 @@ module RSpec
   end
 end
 
-# TODO - make this configurable with default 'on'
-require 'rspec/expectations'
-
+require 'rspec/core/backward_compatibility'
 require 'rspec/monkey'

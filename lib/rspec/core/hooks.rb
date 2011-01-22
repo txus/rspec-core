@@ -10,8 +10,8 @@ module RSpec
           @block = block
         end
 
-        def options_apply?(group)
-          !group || group.all_apply?(options)
+        def options_apply?(example_or_group)
+          !example_or_group || example_or_group.apply?(:all?, options)
         end
 
         def to_proc
@@ -50,14 +50,18 @@ module RSpec
       end
 
       class HookCollection < Array
-        def find_hooks_for(group)
-          dup.reject {|hook| !hook.options_apply?(group)}
+        def find_hooks_for(example_or_group)
+          self.class.new(select {|hook| hook.options_apply?(example_or_group)})
+        end
+
+        def without_hooks_for(example_or_group)
+          self.class.new(reject {|hook| hook.options_apply?(example_or_group)})
         end
       end
 
       class BeforeHooks < HookCollection
         def run_all(example_group_instance)
-          each {|h| h.run_in(example_group_instance) }
+          each {|h| h.run_in(example_group_instance) } unless empty?
         end
 
         def run_all!(example_group_instance)
@@ -67,7 +71,7 @@ module RSpec
 
       class AfterHooks < HookCollection
         def run_all(example_group_instance)
-          reverse.each {|h| h.run_in(example_group_instance) }
+          reverse.each {|h| h.run_in(example_group_instance) } unless empty?
         end
 
         def run_all!(example_group_instance)
@@ -112,12 +116,23 @@ module RSpec
         hooks[hook][scope].run_all!(example_group_instance)
       end
 
-      def run_hook_filtered(hook, scope, group, example_group_instance)
-        find_hook(hook, scope, group).run_all(example_group_instance)
+      def run_hook_filtered(hook, scope, group, example_group_instance, example = nil)
+        find_hook(hook, scope, group, example).run_all(example_group_instance)
       end
 
-      def find_hook(hook, scope, example_group_class)
-        hooks[hook][scope].find_hooks_for(example_group_class)
+      def find_hook(hook, scope, example_group_class, example = nil)
+        found_hooks = hooks[hook][scope].find_hooks_for(example || example_group_class)
+
+        # ensure we don't re-run :all hooks that were applied to any of the parent groups
+        if scope == :all
+          super_klass = example_group_class.superclass
+          while super_klass != RSpec::Core::ExampleGroup
+            found_hooks = found_hooks.without_hooks_for(super_klass)
+            super_klass = super_klass.superclass
+          end
+        end
+
+        found_hooks
       end
 
     private

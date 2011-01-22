@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'tmpdir'
 
 module RSpec::Core
 
@@ -7,43 +8,96 @@ module RSpec::Core
     let(:config) { subject }
 
     describe "#load_spec_files" do
+
       it "loads files using load" do
         config.files_to_run = ["foo.bar", "blah_spec.rb"]
         config.should_receive(:load).twice
         config.load_spec_files
       end
+
+      context "with rspec-1 loaded" do
+        before do
+          Object.const_set(:Spec, Module.new)
+          ::Spec::const_set(:VERSION, Module.new)
+          ::Spec::VERSION::const_set(:MAJOR, 1)
+        end
+        after  { Object.__send__(:remove_const, :Spec) }
+        it "raises with a helpful message" do
+          expect {
+            config.load_spec_files
+          }.to raise_error(/rspec-1 has been loaded/)
+        end
+      end
     end
 
-    describe "#mock_framework_class" do
-      before(:each) do
-        config.stub(:require)
-      end
-
+    describe "#mock_framework" do
       it "defaults to :rspec" do
         config.should_receive(:require).with('rspec/core/mocking/with_rspec')
-        config.require_mock_framework_adapter
+        config.mock_framework
+      end
+    end
+
+    describe "#mock_framework=" do
+      [:rspec, :mocha, :rr, :flexmock].each do |framework|
+        context "with #{framework}" do
+          it "requires the adapter for #{framework.inspect}" do
+            config.should_receive(:require).with("rspec/core/mocking/with_#{framework}")
+            config.mock_framework = framework
+          end
+        end
       end
 
-      [:rspec, :mocha, :rr, :flexmock].each do |framework|
-        it "uses #{framework.inspect} framework when set explicitly" do
-          config.should_receive(:require).with("rspec/core/mocking/with_#{framework}")
-          config.mock_framework = framework
-          config.require_mock_framework_adapter
+      context "with a module" do
+        it "sets the mock_framework_adapter to that module" do
+          config.stub(:require)
+          mod = Module.new
+          config.mock_framework = mod
+          config.mock_framework.should eq(mod)
         end
       end
 
       it "uses the null adapter when set to any unknown key" do
         config.should_receive(:require).with('rspec/core/mocking/with_absolutely_nothing')
         config.mock_framework = :crazy_new_mocking_framework_ive_not_yet_heard_of
-        config.require_mock_framework_adapter
       end
+    end
 
-      it "supports mock_with for backward compatibility with rspec-1.x" do
-        config.should_receive(:require).with('rspec/core/mocking/with_rspec')
+    describe "#mock_with" do
+      it "delegates to mock_framework=" do
+        config.should_receive(:mock_framework=).with(:rspec)
         config.mock_with :rspec
-        config.require_mock_framework_adapter
+      end
+    end
+
+    describe "#expectation_framework" do
+      it "defaults to :rspec" do
+        config.should_receive(:require).with('rspec/core/expecting/with_rspec')
+        config.expectation_frameworks
+      end
+    end
+
+    describe "#expectation_framework=" do
+      it "delegates to expect_with=" do
+        config.should_receive(:expect_with).with([:rspec])
+        config.expectation_framework = :rspec
+      end
+    end
+
+    describe "#expect_with" do
+      [:rspec, :stdlib].each do |framework|
+        context "with #{framework}" do
+          it "requires the adapter for #{framework.inspect}" do
+            config.should_receive(:require).with("rspec/core/expecting/with_#{framework}")
+            config.expect_with framework
+          end
+        end
       end
 
+      it "raises ArgumentError if framework is not supported" do
+        expect do
+          config.expect_with :not_supported
+        end.to raise_error(ArgumentError)
+      end
     end
 
     context "setting the files to run" do
@@ -128,6 +182,11 @@ module RSpec::Core
       end
 
       context "with full_description" do
+        it "overrides :focused" do
+          config.filter_run :focused => true
+          config.full_description = "foo"
+          config.filter.should_not have_key(:focused)
+        end
 
         it "assigns the example name as the filter on description" do
           config.full_description = "foo"
@@ -193,12 +252,12 @@ module RSpec::Core
     describe "run_all_when_everything_filtered?" do
 
       it "defaults to false" do
-        config.run_all_when_everything_filtered?.should == false
+        config.run_all_when_everything_filtered?.should be_false
       end
 
       it "can be queried with question method" do
         config.run_all_when_everything_filtered = true
-        config.run_all_when_everything_filtered?.should == true
+        config.run_all_when_everything_filtered?.should be_true
       end
     end
 
@@ -208,7 +267,7 @@ module RSpec::Core
           it "does not set color_enabled" do
             config.output_stream = StringIO.new
             config.output_stream.stub(:tty?) { false }
-            config.autotest = false
+            config.tty = false
             config.color_enabled = true
             config.color_enabled.should be_false
           end
@@ -218,17 +277,17 @@ module RSpec::Core
           it "does not set color_enabled" do
             config.output_stream = StringIO.new
             config.output_stream.stub(:tty?) { true }
-            config.autotest = false
+            config.tty = false
             config.color_enabled = true
             config.color_enabled.should be_true
           end
         end
 
-        context "with autotest output" do
+        context "with tty set" do
           it "does not set color_enabled" do
             config.output_stream = StringIO.new
             config.output_stream.stub(:tty?) { false }
-            config.autotest = true
+            config.tty = true
             config.color_enabled = true
             config.color_enabled.should be_true
           end
@@ -237,75 +296,47 @@ module RSpec::Core
         context "on windows" do
           before do
             @original_host  = RbConfig::CONFIG['host_os']
-            @original_stdout = $stdout
-            @original_stderr = $stderr
-            RbConfig::CONFIG['host_os'] = 'mswin'
+            RbConfig::CONFIG['host_os'] = 'mingw'
             config.stub(:require)
             config.stub(:warn)
           end
 
           after do
             RbConfig::CONFIG['host_os'] = @original_host
-            $stdout = @original_stdout
-            $stderr = @original_stderr
           end
 
-          context "with win32console available" do
-            it "requires win32console" do
-              config.should_receive(:require).
-                with("Win32/Console/ANSI")
+          context "with ANSICON available" do
+            before(:all) do
+              @original_ansicon = ENV['ANSICON']
+              ENV['ANSICON'] = 'ANSICON'
+            end
+
+            after(:all) do
+              ENV['ANSICON'] = @original_ansicon
+            end
+            
+            it "enables colors" do
+              config.output_stream = StringIO.new
+              config.output_stream.stub(:tty?) { true }
               config.color_enabled = true
+              config.color_enabled.should be_true
             end
 
-            context "with $stdout/err assigned to config.output/error_stream" do
-              it "reassigns new $stdout to output_stream" do
-                config.output_stream = $stdout
-                substitute_stdout = StringIO.new
-                config.stub(:require) do |what|
-                  $stdout = substitute_stdout if what =~ /Win32/
-                end
-                config.color_enabled = true
-                config.output_stream.should eq(substitute_stdout)
+            it "leaves output stream intact" do
+              config.output_stream = $stdout
+              config.stub(:require) do |what|
+                config.output_stream = 'foo' if what =~ /Win32/
               end
-
-              it "reassigns new $stderr to error_stream" do
-                config.error_stream = $stderr
-                substitute_stderr = StringIO.new
-                config.stub(:require) do |what|
-                  $stderr = substitute_stderr if what =~ /Win32/
-                end
-                config.color_enabled = true
-                config.error_stream.should eq(substitute_stderr)
-              end
+              config.color_enabled = true
+              config.output_stream.should eq($stdout)
             end
-
-            context "without $stdout/err assigned to config.output/error_stream" do
-              it "leaves output stream intact" do
-                config.output_stream = output_stream = StringIO.new
-                config.stub(:require) do |what|
-                  $stdout = StringIO.new if what =~ /Win32/
-                end
-                config.color_enabled = true
-                config.output_stream.should eq(output_stream)
-              end
-
-              it "leaves error stream intact" do
-                config.error_stream = error_stream = StringIO.new
-                config.stub(:require) do |what|
-                  $stderr = StringIO.new if what =~ /Win32/
-                end
-                config.color_enabled = true
-                config.error_stream.should eq(error_stream)
-              end
-            end
-
           end
 
-          context "with win32console NOT available" do
-            it "warns to install win32console" do
+          context "with ANSICON NOT available" do
+            it "warns to install ANSICON" do
               config.stub(:require) { raise LoadError }
               config.should_receive(:warn).
-                with(/You must 'gem install win32console'/)
+                with(/You must use ANSICON/)
               config.color_enabled = true
             end
 
@@ -320,47 +351,71 @@ module RSpec::Core
     end
 
     describe 'formatter=' do
+      it "delegates to add_formatter (better API for user-facing configuration)" do
+        config.should_receive(:add_formatter).with('these','options')
+        config.add_formatter('these','options')
+      end
+    end
 
-      it "sets formatter_to_use based on name" do
-        config.formatter = :documentation
-        config.formatter.should be_an_instance_of(Formatters::DocumentationFormatter)
-        config.formatter = 'documentation'
-        config.formatter.should be_an_instance_of(Formatters::DocumentationFormatter)
+    describe "add_formatter" do
+
+      it "adds to the list of formatters" do
+        config.add_formatter :documentation
+        config.formatters.first.should be_an_instance_of(Formatters::DocumentationFormatter)
       end
 
-      it "sets a formatter based on its class" do
+      it "finds a formatter by name (w/ Symbol)" do
+        config.add_formatter :documentation
+        config.formatters.first.should be_an_instance_of(Formatters::DocumentationFormatter)
+      end
+
+      it "finds a formatter by name (w/ String)" do
+        config.add_formatter 'documentation'
+        config.formatters.first.should be_an_instance_of(Formatters::DocumentationFormatter)
+      end
+
+      it "finds a formatter by class" do
         formatter_class = Class.new(Formatters::BaseTextFormatter)
-        config.formatter = formatter_class
-        config.formatter.should be_an_instance_of(formatter_class)
+        config.add_formatter formatter_class
+        config.formatters.first.should be_an_instance_of(formatter_class)
       end
 
-      it "sets a formatter based on its class name" do
+      it "finds a formatter by class name" do
         Object.const_set("CustomFormatter", Class.new(Formatters::BaseFormatter))
-        config.formatter = "CustomFormatter"
-        config.formatter.should be_an_instance_of(CustomFormatter)
+        config.add_formatter "CustomFormatter"
+        config.formatters.first.should be_an_instance_of(CustomFormatter)
       end
 
-      it "sets a formatter based on its class fully qualified name" do
+      it "finds a formatter by class fully qualified name" do
         RSpec.const_set("CustomFormatter", Class.new(Formatters::BaseFormatter))
-        config.formatter = "RSpec::CustomFormatter"
-        config.formatter.should be_an_instance_of(RSpec::CustomFormatter)
+        config.add_formatter "RSpec::CustomFormatter"
+        config.formatters.first.should be_an_instance_of(RSpec::CustomFormatter)
       end
 
-      it "requires and sets a formatter based on its class fully qualified name" do
+      it "requires a formatter file based on its fully qualified name" do
         config.should_receive(:require).with('rspec/custom_formatter2') do
           RSpec.const_set("CustomFormatter2", Class.new(Formatters::BaseFormatter))
         end
-        config.formatter = "RSpec::CustomFormatter2"
-        config.formatter.should be_an_instance_of(RSpec::CustomFormatter2)
+        config.add_formatter "RSpec::CustomFormatter2"
+        config.formatters.first.should be_an_instance_of(RSpec::CustomFormatter2)
       end
 
       it "raises NameError if class is unresolvable" do
         config.should_receive(:require).with('rspec/custom_formatter3')
-        lambda { config.formatter = "RSpec::CustomFormatter3" }.should raise_error(NameError)
+        lambda { config.add_formatter "RSpec::CustomFormatter3" }.should raise_error(NameError)
       end
 
       it "raises ArgumentError if formatter is unknown" do
-        lambda { config.formatter = :progresss }.should raise_error(ArgumentError)
+        lambda { config.add_formatter :progresss }.should raise_error(ArgumentError)
+      end
+
+      context "with a 2nd arg defining the output" do
+        it "creates a file at that path and sets it as the output" do
+          path = File.join(Dir.tmpdir, 'output.txt')
+          config.add_formatter('doc', path)
+          config.formatters.first.output.should be_a(File)
+          config.formatters.first.output.path.should eq(path)
+        end
       end
 
     end
@@ -368,9 +423,17 @@ module RSpec::Core
     describe "#filter_run" do
       it "sets the filter" do
         config.filter_run :focus => true
-        config.filter.should eq({:focus => true})
+        config.filter[:focus].should == true
       end
-      
+
+      it "merges with existing filters" do
+        config.filter_run :filter1 => true
+        config.filter_run :filter2 => false
+
+        config.filter[:filter1].should == true
+        config.filter[:filter2].should == false
+      end
+
       it "warns if :line_number is already a filter" do
         config.filter_run :line_number => 100
         config.should_receive(:warn).with(
@@ -379,7 +442,7 @@ module RSpec::Core
         )
         config.filter_run :focus => true
       end
-      
+
       it "warns if :full_description is already a filter" do
         config.filter_run :full_description => 'foo'
         config.should_receive(:warn).with(
@@ -393,13 +456,55 @@ module RSpec::Core
     describe "#filter_run_excluding" do
       it "sets the filter" do
         config.filter_run_excluding :slow => true
-        config.exclusion_filter.should eq({:slow => true})
+        config.exclusion_filter[:slow].should == true
+      end
+
+      it "merges with existing filters" do
+        config.filter_run_excluding :filter1 => true
+        config.filter_run_excluding :filter2 => false
+
+        config.exclusion_filter[:filter1].should == true
+        config.exclusion_filter[:filter2].should == false
+      end
+    end
+
+    describe "#exclusion_filter" do
+      describe "the default :if filter" do
+        it "does not exclude a spec with no :if metadata" do
+          config.exclusion_filter[:if].call(nil, {}).should be_false
+        end
+
+        it "does not exclude a spec with { :if => true } metadata" do
+          config.exclusion_filter[:if].call(true, {:if => true}).should be_false
+        end
+
+        it "excludes a spec with { :if => false } metadata" do
+          config.exclusion_filter[:if].call(false, {:if => false}).should be_true
+        end
+
+        it "excludes a spec with { :if => nil } metadata" do
+          config.exclusion_filter[:if].call(false, {:if => nil}).should be_true
+        end
+      end
+
+      describe "the default :unless filter" do
+        it "excludes a spec with  { :unless => true } metadata" do
+          config.exclusion_filter[:unless].call(true).should be_true
+        end
+
+        it "does not exclude a spec with { :unless => false } metadata" do
+          config.exclusion_filter[:unless].call(false).should be_false
+        end
+
+        it "does not exclude a spec with { :unless => nil } metadata" do
+          config.exclusion_filter[:unless].call(nil).should be_false
+        end
       end
     end
 
     describe "line_number=" do
       before { config.stub(:warn) }
-      
+
       it "sets the line number" do
         config.line_number = '37'
         config.filter.should == {:line_number => 37}
@@ -434,8 +539,31 @@ module RSpec::Core
     end
 
     describe "#debug=true" do
+      before do
+        if defined?(Debugger)
+          @orig_debugger = Debugger
+          Object.send(:remove_const, :Debugger)
+        else
+          @orig_debugger = nil
+        end
+        Object.const_set("Debugger", debugger)
+      end
+
+      after do
+        Object.send(:remove_const, :Debugger)
+        Object.const_set("Debugger", @orig_debugger) if @orig_debugger
+      end
+
+      let(:debugger) { double('Debugger').as_null_object }
+
       it "requires 'ruby-debug'" do
         config.should_receive(:require).with('ruby-debug')
+        config.debug = true
+      end
+
+      it "starts the debugger" do
+        config.stub(:require)
+        debugger.should_receive(:start)
         config.debug = true
       end
     end
@@ -540,7 +668,7 @@ module RSpec::Core
     end
 
     describe "#configure_group" do
-      it "extends with modules" do
+      it "extends with 'extend'" do
         mod = Module.new
         group = ExampleGroup.describe("group", :foo => :bar)
 
@@ -549,11 +677,20 @@ module RSpec::Core
         group.should be_a(mod)
       end
 
-      it "includes modules" do
+      it "extends with 'module'" do
         mod = Module.new
         group = ExampleGroup.describe("group", :foo => :bar)
 
         config.include(mod, :foo => :bar)
+        config.configure_group(group)
+        group.included_modules.should include(mod)
+      end
+
+      it "requires only one matching filter" do
+        mod = Module.new
+        group = ExampleGroup.describe("group", :foo => :bar)
+
+        config.include(mod, :foo => :bar, :baz => :bam)
         config.configure_group(group)
         group.included_modules.should include(mod)
       end

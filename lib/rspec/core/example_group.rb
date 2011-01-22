@@ -4,7 +4,8 @@ module RSpec
       extend  Extensions::ModuleEvalWithArgs
       include Extensions::InstanceEvalWithArgs
       extend  Hooks
-      include Subject
+      extend  Subject::ClassMethods
+      include Subject::InstanceMethods
       include Let
       include Pending
 
@@ -19,9 +20,9 @@ module RSpec
         RSpec.world
       end
 
-      def self.inherited(klass)
+      def self.register
         RSpec::Core::Runner.autorun
-        world.example_groups << klass if klass.top_level?
+        world.register(self)
       end
 
       class << self
@@ -57,7 +58,8 @@ module RSpec
 
       alias_example_to :it
       alias_example_to :specify
-      alias_example_to :focused, :focused => true
+      alias_example_to :focused, :focused => true, :focus => true
+      alias_example_to :focus,   :focused => true, :focus => true
       alias_example_to :pending, :pending => true
       alias_example_to :xit,     :pending => true
 
@@ -68,8 +70,8 @@ module RSpec
             raise "Could not find shared example group named \#{name.inspect}" unless shared_block
 
             group = describe("#{report_label || "it should behave like"} \#{name}") do
-              module_eval_with_args *args, &shared_block
-              module_eval &customization_block if customization_block
+              module_eval_with_args(*args, &shared_block)
+              module_eval(&customization_block) if customization_block
             end
             group.metadata[:shared_group_name] = name
             group
@@ -171,26 +173,27 @@ module RSpec
       def self.eval_before_alls(example_group_instance)
         return if descendant_filtered_examples.empty?
         assign_before_all_ivars(superclass.before_all_ivars, example_group_instance)
-        world.run_hook_filtered(:before, :all, self, example_group_instance) if top_level?
+        world.run_hook_filtered(:before, :all, self, example_group_instance)
         run_hook!(:before, :all, example_group_instance)
         store_before_all_ivars(example_group_instance)
       end
 
-      def self.eval_around_eachs(example_group_instance, wrapped_example)
-        around_hooks.reverse.inject(wrapped_example) do |wrapper, hook|
-          def wrapper.run; call; end
-          lambda { example_group_instance.instance_eval_with_args(wrapper, &hook) }
+      def self.eval_around_eachs(example, initial_procsy)
+        example.around_hooks.reverse.inject(initial_procsy) do |procsy, around_hook|
+          Example::Procsy.new(procsy.metadata) do
+            example.example_group_instance.instance_eval_with_args(procsy, &around_hook)
+          end
         end
       end
 
-      def self.eval_before_eachs(example_group_instance)
-        world.run_hook_filtered(:before, :each, self, example_group_instance)
-        ancestors.reverse.each { |ancestor| ancestor.run_hook(:before, :each, example_group_instance) }
+      def self.eval_before_eachs(example)
+        world.run_hook_filtered(:before, :each, self, example.example_group_instance, example)
+        ancestors.reverse.each { |ancestor| ancestor.run_hook(:before, :each, example.example_group_instance) }
       end
 
-      def self.eval_after_eachs(example_group_instance)
-        ancestors.each { |ancestor| ancestor.run_hook(:after, :each, example_group_instance) }
-        world.run_hook_filtered(:after, :each, self, example_group_instance)
+      def self.eval_after_eachs(example)
+        ancestors.each { |ancestor| ancestor.run_hook(:after, :each, example.example_group_instance) }
+        world.run_hook_filtered(:after, :each, self, example.example_group_instance, example)
       end
 
       def self.eval_after_alls(example_group_instance)
@@ -210,11 +213,11 @@ An error occurred in an after(:all) hook.
         EOS
         end
 
-        world.run_hook_filtered(:after, :all, self, example_group_instance) if top_level?
+        world.run_hook_filtered(:after, :all, self, example_group_instance)
       end
 
-      def self.around_hooks
-        @around_hooks ||= (world.find_hook(:around, :each, self) + ancestors.reverse.inject([]){|l,a| l + a.find_hook(:around, :each, self)})
+      def self.around_hooks_for(example)
+        world.find_hook(:around, :each, self, example) + ancestors.reverse.inject([]){|l,a| l + a.find_hook(:around, :each, self, example)}
       end
 
       def self.run(reporter)
@@ -222,18 +225,17 @@ An error occurred in an after(:all) hook.
           RSpec.clear_remaining_example_groups if top_level?
           return
         end
-        example_group_instance = new
         reporter.example_group_started(self)
 
         begin
-          eval_before_alls(example_group_instance)
-          result_for_this_group = run_examples(example_group_instance, reporter)
+          eval_before_alls(new)
+          result_for_this_group = run_examples(reporter)
           results_for_descendants = children.map {|child| child.run(reporter)}.all?
           result_for_this_group && results_for_descendants
         rescue Exception => ex
           fail_filtered_examples(ex, reporter)
         ensure
-          eval_after_alls(example_group_instance)
+          eval_after_alls(new)
           reporter.example_group_finished(self)
         end
       end
@@ -252,23 +254,19 @@ An error occurred in an after(:all) hook.
         RSpec.configuration.fail_fast?
       end
 
-      def self.run_examples(instance, reporter)
+      def self.run_examples(reporter)
         filtered_examples.map do |example|
           next if RSpec.wants_to_quit
-          begin
-            set_ivars(instance, before_all_ivars)
-            succeeded = example.run(instance, reporter)
-            RSpec.wants_to_quit = true if fail_fast? && !succeeded
-            succeeded
-          ensure
-            clear_ivars(instance)
-            clear_memoized(instance)
-          end
+          instance = new
+          set_ivars(instance, before_all_ivars)
+          succeeded = example.run(instance, reporter)
+          RSpec.wants_to_quit = true if fail_fast? && !succeeded
+          succeeded
         end.all?
       end
 
-      def self.all_apply?(filters)
-        metadata.all_apply?(filters)
+      def self.apply?(predicate, filters)
+        metadata.apply?(predicate, filters)
       end
 
       def self.declaration_line_numbers
@@ -283,14 +281,6 @@ An error occurred in an after(:all) hook.
 
       def self.set_ivars(instance, ivars)
         ivars.each {|name, value| instance.instance_variable_set(name, value)}
-      end
-
-      def self.clear_ivars(instance)
-        instance.instance_variables.each { |ivar| instance.send(:remove_instance_variable, ivar) }
-      end
-
-      def self.clear_memoized(instance)
-        instance.__memoized.clear
       end
 
       def described_class
