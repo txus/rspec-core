@@ -5,7 +5,9 @@
 * Enhancements
   * Autotest::Rspec2 parses command line args passed to autotest after '--'
   * --skip-bundler option for autotest command
+  * Autotest regexp fixes (Jon Rowe)
   * Add filters to html and textmate formatters (Daniel Quimper)
+  * Explicit passing of block (need for JRuby 1.6) (John Firebaugh)
 
 * Bug fixes
   * fix dom IDs in HTML formatter (Brian Faherty)
@@ -13,6 +15,7 @@
   * include --tag options in drb args (monocle)
   * fix regression so now SPEC_OPTS take precedence over CLI options again
     (Roman Chernyatchik)
+  * only call its(:attribute) once (failing example from Brian Dunn)
 
 * Deprecations
   * implicit inclusion of 'bundle exec' when Gemfile present (use autotest's
