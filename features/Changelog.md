@@ -1,6 +1,43 @@
 ### dev
 
-[full changelog](http://github.com/rspec/rspec-core/compare/v2.4.0...master)
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.5.1...master)
+
+* Enhancements
+  * `config.for_groups_matching` (Damian Nurzynski)
+      * extend groups matching specific metadata with:
+          * method definitions
+          * subject declarations
+          * let/let! declarations
+          * etc (anything you can do in a group)
+  * `its([:key])` works for any subject with #[]. (Peter Jaros)
+
+* Bug fixes
+  * don't stumble over an exception without a message (Hans Hasselberg)
+  * remove non-ascii characters from comments that were choking rcov (Geoffrey
+    Byers)
+  * fixed backtrace so it doesn't include lines from before the autorun at_exit
+    hook (Myron Marston)
+
+### 2.5.1 / 2011-02-06
+
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.5.0...v2.5.1)
+
+NOTE: this release breaks compatibility with rspec/autotest/bundler
+integration, but does so in order to greatly simplify it.
+
+With this release, if you want the generated autotest command to include
+'bundle exec', require Autotest's bundler plugin in a .autotest file in the
+project's root directory or in your home directory:
+
+    require "autotest/bundler"
+
+Now you can just type 'autotest' on the commmand line and it will work as you expect.
+
+If you don't want 'bundle exec', there is nothing you have to do.
+
+### 2.5.0 / 2011-02-05
+
+[full changelog](http://github.com/rspec/rspec-core/compare/v2.4.0...v2.5.0)
 
 * Enhancements
   * Autotest::Rspec2 parses command line args passed to autotest after '--'
@@ -16,6 +53,8 @@
   * fix regression so now SPEC_OPTS take precedence over CLI options again
     (Roman Chernyatchik)
   * only call its(:attribute) once (failing example from Brian Dunn)
+  * fix bizarre bug where rspec would hang after String.alias :to_int :to_i
+    (Damian Nurzynski)
 
 * Deprecations
   * implicit inclusion of 'bundle exec' when Gemfile present (use autotest's

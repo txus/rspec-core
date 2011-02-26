@@ -13,6 +13,44 @@ end
 module RSpec::Core
 
   describe ExampleGroup do
+    it_behaves_like "metadata hash builder" do
+      def metadata_hash(*args)
+        group = ExampleGroup.describe('example description', *args)
+        group.metadata
+      end
+    end
+
+    context 'when RSpec.configuration.treat_symbols_as_metadata_keys_with_true_values is set to false' do
+      before(:each) do
+        RSpec.configure { |c| c.treat_symbols_as_metadata_keys_with_true_values = false }
+        Kernel.stub(:warn)
+      end
+
+      it 'processes string args as part of the description' do
+        group = ExampleGroup.describe("some", "separate", "strings")
+        group.description.should == "some separate strings"
+      end
+
+      it 'processes symbol args as part of the description' do
+        group = ExampleGroup.describe(:some, :separate, :symbols)
+        group.description.should == "some separate symbols"
+      end
+    end
+
+    context 'when RSpec.configuration.treat_symbols_as_metadata_keys_with_true_values is set to true' do
+      let(:group) { ExampleGroup.describe(:symbol) }
+      before(:each) do
+        RSpec.configure { |c| c.treat_symbols_as_metadata_keys_with_true_values = true }
+      end
+
+      it 'does not treat the first argument as a metadata key even if it is a symbol' do
+        group.metadata.should_not include(:symbol)
+      end
+
+      it 'treats the first argument as part of the description when it is a symbol' do
+        group.description.should == "symbol"
+      end
+    end
 
     describe "top level group" do
       it "runs its children" do
@@ -189,8 +227,6 @@ module RSpec::Core
           group.run.should be_true, "expected examples in group to pass"
         end
       end
-
-
     end
 
     describe '#described_class' do
@@ -200,16 +236,13 @@ module RSpec::Core
     end
 
     describe '#description' do
-
       it "grabs the description from the metadata" do
         group = ExampleGroup.describe(Object, "my desc") { }
         group.description.should == group.metadata[:example_group][:description]
       end
-
     end
 
     describe '#metadata' do
-
       it "adds the third parameter to the metadata" do
         ExampleGroup.describe(Object, nil, 'foo' => 'bar') { }.metadata.should include({ "foo" => 'bar' })
       end
@@ -225,7 +258,6 @@ module RSpec::Core
       it "adds the line_number to metadata" do
         ExampleGroup.describe(Object) { }.metadata[:example_group][:line_number].should == __LINE__
       end
-
     end
 
     [:focus, :focused].each do |example_alias|
@@ -255,7 +287,7 @@ module RSpec::Core
 
         group.run
 
-        order.should == [1,2,3]
+        order.should eq([1,2,3])
       end
 
       it "runs the before eachs in order" do
@@ -268,7 +300,7 @@ module RSpec::Core
 
         group.run
 
-        order.should == [1,2,3]
+        order.should eq([1,2,3])
       end
 
       it "runs the after eachs in reverse order" do
@@ -281,7 +313,7 @@ module RSpec::Core
 
         group.run
 
-        order.should == [3,2,1]
+        order.should eq([3,2,1])
       end
 
       it "runs the after alls in reverse order" do
@@ -294,7 +326,7 @@ module RSpec::Core
 
         group.run
 
-        order.should == [3,2,1]
+        order.should eq([3,2,1])
       end
 
       it "only runs before/after(:all) hooks from example groups that have specs that run" do
@@ -325,7 +357,7 @@ module RSpec::Core
         unfiltered_group.run
         filtered_group.run
 
-        hooks_run.should == [:filtered_before_all, :filtered_after_all]
+        hooks_run.should eq([:filtered_before_all, :filtered_after_all])
       end
 
       it "runs before_all_defined_in_config, before all, before each, example, after each, after all, after_all_defined_in_config in that order" do
@@ -372,22 +404,44 @@ module RSpec::Core
         ]
       end
 
-      it "accesses before(:all) state in after(:all)" do
-        group = ExampleGroup.describe
-        group.before(:all) { @ivar = "value" }
-        group.after(:all)  { @ivar.should eq("value") }
-        group.example("ignore") {  }
+      context "after(:all)" do
+        let(:outer) { ExampleGroup.describe }
+        let(:inner) { outer.describe }
 
-        expect do
-          group.run
-        end.to_not raise_error
+        it "has access to state defined before(:all)" do
+          outer.before(:all) { @outer = "outer" }
+          inner.before(:all) { @inner = "inner" }
+
+          outer.after(:all) do
+            @outer.should eq("outer")
+            @inner.should eq("inner")
+          end
+          inner.after(:all) do
+            @inner.should eq("inner")
+            @outer.should eq("outer")
+          end
+
+          outer.run
+        end
+
+        it "cleans up ivars in after(:all)" do
+          outer.before(:all) { @outer = "outer" }
+          inner.before(:all) { @inner = "inner" }
+
+          outer.run
+
+          inner.before_all_ivars[:@inner].should be_nil
+          inner.before_all_ivars[:@outer].should be_nil
+          outer.before_all_ivars[:@inner].should be_nil
+          outer.before_all_ivars[:@outer].should be_nil
+        end
       end
 
       it "treats an error in before(:each) as a failure" do
         group = ExampleGroup.describe
         group.before(:each) { raise "error in before each" }
         example = group.example("equality") { 1.should == 2}
-        group.run
+        group.run.should == false
 
         example.metadata[:execution_result][:exception].message.should == "error in before each"
       end
@@ -396,7 +450,7 @@ module RSpec::Core
         group = ExampleGroup.describe
         group.before(:all) { raise "error in before all" }
         example = group.example("equality") { 1.should == 2}
-        group.run
+        group.run.should == false
 
         example.metadata.should_not be_nil
         example.metadata[:execution_result].should_not be_nil

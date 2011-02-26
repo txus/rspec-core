@@ -33,6 +33,7 @@ module RSpec
       add_setting :include_or_extend_modules
       add_setting :backtrace_clean_patterns
       add_setting :tty
+      add_setting :treat_symbols_as_metadata_keys_with_true_values, :default => false
 
       def initialize
         @color_enabled = false
@@ -370,6 +371,28 @@ EOM
           next unless filters.empty? || group.apply?(:any?, filters)
           group.send(include_or_extend, mod)
         end
+      end
+
+      # Extend groups matching submitted metadata with methods, subject declarations
+      # and let/let! declarations.
+      #
+      # Example:
+      #
+      #   RSpec.configure do |c|
+      #     c.for_matching_groups :type => :model do
+      #       def a_method
+      #         "a value"
+      #       end
+      #       subject { Factory described_class.to_s.underscore }
+      #       let(:valid_attributes) { Factory.attributes_for described_class.to_sym }
+      #     end
+      #   end
+      def for_groups_matching(filters = {}, &block)
+        mod = Module.new
+        (class << mod; self; end).send(:define_method, :extended) do |host|
+          host.class_eval(&block)
+        end
+        self.extend(mod, filters)
       end
 
       def configure_mock_framework

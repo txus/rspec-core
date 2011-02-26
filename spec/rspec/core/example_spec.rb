@@ -9,6 +9,13 @@ describe RSpec::Core::Example, :parent_metadata => 'sample' do
     example_group.example('example description')
   end
 
+  it_behaves_like "metadata hash builder" do
+    def metadata_hash(*args)
+      example = example_group.example('example description', *args)
+      example.metadata
+    end
+  end
+
   describe '#described_class' do
     it "returns the class (if any) of the outermost example group" do
       described_class.should == RSpec::Core::Example
@@ -118,6 +125,19 @@ describe RSpec::Core::Example, :parent_metadata => 'sample' do
         end
         group.run
         group.examples.first.should be_pending
+      end
+
+      it "allows post-example processing in around hooks (see https://github.com/rspec/rspec-core/issues/322)" do
+        blah = nil
+        group = RSpec::Core::ExampleGroup.describe do
+          around do |example|
+            example.run
+            blah = :success
+          end
+          example { pending }
+        end
+        group.run
+        blah.should be(:success)
       end
     end
       

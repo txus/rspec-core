@@ -95,6 +95,11 @@ module RSpec
         def format_backtrace(backtrace, example)
           return "" unless backtrace
           return backtrace if example.metadata[:full_backtrace] == true
+
+          if at_exit_index = backtrace.index(RSpec::Core::Runner::AT_EXIT_HOOK_BACKTRACE_LINE)
+            backtrace = backtrace[0, at_exit_index]
+          end
+
           cleansed = backtrace.map { |line| backtrace_line(line) }.compact
           cleansed.empty? ? backtrace : cleansed
         end
@@ -121,7 +126,7 @@ module RSpec
           file_path, line_number = matching_line.match(/(.+?):(\d+)(|:\d+)/)[1..2]
 
           if File.exist?(file_path)
-            open(file_path, 'r') { |f| f.readlines[line_number.to_i - 1] }
+            File.readlines(file_path)[line_number.to_i - 1]
           else
             "Unable to find #{file_path} to read failed line"
           end

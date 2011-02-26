@@ -109,14 +109,14 @@ module RSpec
         #
         #   describe "a configuration Hash" do
         #     subject do
-        #       { :max_users => 3,
+        #       { :max_users => 3,
         #         'admin' => :all_permissions }
         #     end
         #
         #     its([:max_users]) { should == 3 }
         #     its(['admin']) { should == :all_permissions }
         #
-        #     # You can still access to its regular methods this way:
+        #     # You can still access to its regular methods this way:
         #     its(:keys) { should include(:max_users) }
         #     its(:count) { should == 2 }
         #   end
@@ -125,8 +125,8 @@ module RSpec
             example do
               self.class.class_eval do
                 define_method(:subject) do
-                  @_subject ||= if super().is_a?(Hash) && attribute.is_a?(Array)
-                                  OpenStruct.new(super()).send(attribute.first)
+                  @_subject ||= if attribute.is_a?(Array)
+                                  super()[*attribute]
                                 else
                                   attribute.to_s.split('.').inject(super()) do |target, method|
                                     target.send(method)

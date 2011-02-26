@@ -20,6 +20,7 @@
   - arbitrary_methods.feature
 - metadata:
   - described_class.feature
+  - user_defined.feature
 - filtering:
   - inclusion_filters.feature
   - exclusion_filters.feature
@@ -28,15 +29,17 @@
 - command_line:
   - configure.feature
   - example_name_option.feature
-  - exit_status.feature
-  - line_number_appended_to_path.feature
+  - format_option.feature
   - line_number_option.feature
-  - rake_task.feature
   - tag.feature
+  - line_number_appended_to_path.feature
+  - exit_status.feature
+  - rake_task.feature
 - configuration:
   - read_options_from_file.feature
   - fail_fast.feature
   - custom_settings.feature
+  - for_groups_matching.feature
 - expectation_framework_integration:
   - configure_expectation_framework.feature
 - mock_framework_integration:

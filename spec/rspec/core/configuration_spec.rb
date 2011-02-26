@@ -30,6 +30,17 @@ module RSpec::Core
       end
     end
 
+    describe "#treat_symbols_as_metadata_keys_with_true_values?" do
+      it 'can be set to true' do
+        config.treat_symbols_as_metadata_keys_with_true_values = true
+        config.treat_symbols_as_metadata_keys_with_true_values?.should be_true
+      end
+
+      it 'defaults to false' do
+        config.treat_symbols_as_metadata_keys_with_true_values?.should be_false
+      end
+    end
+
     describe "#mock_framework" do
       it "defaults to :rspec" do
         config.should_receive(:require).with('rspec/core/mocking/with_rspec')
@@ -712,5 +723,67 @@ module RSpec::Core
         group.included_modules.should include(mod2)
       end
     end
+
+    describe "#for_groups_matching" do
+      let(:matching_group) { ExampleGroup.describe(Array, :extended => true) }
+      let(:non_matching_group) { ExampleGroup.describe(Array) }
+
+      before do
+        config.for_groups_matching :extended => true do
+          def method_defined_in_config
+            'method defined in config'
+          end
+          subject { "subject defined in config" }
+          let(:let_declaration_in_config) { 'value returned by let declared in config' }
+          let(:let_bang_declaration_in_config) { 'value returned by let bang declared in config' }
+        end
+        [matching_group, non_matching_group].each {|g| config.configure_group(g) }
+      end
+
+      context "for groups matching filters" do
+        it "defines methods" do
+          matching_group.new.method_defined_in_config.should == 'method defined in config'
+        end
+
+        it "defines subject" do
+          matching_group.subject.call.should eq("subject defined in config")
+        end
+
+        it "defines let" do
+          matching_group.example('let') { let_declaration_in_config.should eq('value returned by let declared in config') }
+          matching_group.run.should be_true, "expected method declared with let to be accessible in example group"
+        end
+
+        it "defines let!" do
+          matching_group.example('let!') { let_bang_declaration_in_config.should eq('value returned by let bang declared in config') }
+          matching_group.run.should be_true, "expected method declared with let! to be accessible in example group"
+        end
+      end
+
+      context "for groups not matching filters given" do
+        it "doesn't define new methods" do
+          expect { non_matching_group.new.method_defined_in_config }.to raise_error(NoMethodError)
+        end
+
+        it "doesn't change the subject" do
+          non_matching_group.subject.call.should eq([])
+        end
+
+        it "doesn't define let" do
+          non_matching_group.example('let') do
+            expect { let_declaration_in_config }.to raise_error(NameError)
+          end
+          non_matching_group.run.should be_true, 'defined let should raise NameError for not matching group'
+        end
+
+        it "doesn't define let!" do
+          non_matching_group.example('let') do
+            expect { let_bang_declaration_in_config }.to raise_error(NameError)
+          end
+          non_matching_group.run.should be_true, 'defined let should raise NameError for not matching group'
+        end
+      end
+    end
+
   end
 end
